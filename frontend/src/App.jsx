@@ -5,6 +5,7 @@
 
 import { useState } from 'react'
 import KeyGenerator from './components/KeyGenerator.jsx'
+import UserKeyManager from './components/UserKeyManager.jsx'
 import SignDocument from './components/SignDocument.jsx'
 import VerifyDocument from './components/VerifyDocument.jsx'
 
@@ -18,18 +19,21 @@ export default function App() {
   const [privateKey, setPrivateKey] = useState('')
   const [signature, setSignature] = useState('')
 
+  const [userKeysRevision, setUserKeysRevision] = useState(0)
+
   // Snapshots captured after a successful sign, used by Verify to classify scenarios.
   const [signedHash, setSignedHash] = useState('')
   const [signedSignatureSnapshot, setSignedSignatureSnapshot] = useState('')
   const [signedPublicKeySnapshot, setSignedPublicKeySnapshot] = useState('')
 
   const SECTIONS = [
+    { id: 'userKeys', label: 'User Key Management' },
     { id: 'keys', label: 'Key Generation' },
     { id: 'sign', label: 'Document Signing' },
     { id: 'verify', label: 'Document Verification' },
   ]
 
-  const [activeSection, setActiveSection] = useState(SECTIONS[0].id)
+  const [activeSection, setActiveSection] = useState('keys')
 
   /**
    * Compute the client-side SHA-256 whenever the document changes.
@@ -126,7 +130,15 @@ export default function App() {
               publicKey={publicKey}
               privateKey={privateKey}
               onKeysGenerated={handleKeysGenerated}
+              onUserKeysStored={() => setUserKeysRevision((n) => n + 1)}
             />
+          </div>
+
+          <div
+            className={activeSection === 'userKeys' ? '' : 'hidden'}
+            aria-hidden={activeSection !== 'userKeys'}
+          >
+            <UserKeyManager storageRevision={userKeysRevision} />
           </div>
 
           <div className={activeSection === 'sign' ? '' : 'hidden'} aria-hidden={activeSection !== 'sign'}>
