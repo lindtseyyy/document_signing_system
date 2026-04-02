@@ -79,7 +79,7 @@ export default function KeyGenerator({ onUserKeysStored }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <header className="space-y-2">
-        <h2 className="text-lg font-semibold text-slate-900">1) Key Generator</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Key Generator</h2>
 
       </header>
 

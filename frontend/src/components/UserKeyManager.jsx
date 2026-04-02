@@ -54,9 +54,6 @@ export default function UserKeyManager({ storageRevision }) {
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <header className="space-y-2">
         <h2 className="text-lg font-semibold text-slate-900">User Key Management</h2>
-        <p className="text-sm text-slate-600">
-          Keys are stored locally in your browser (localStorage).
-        </p>
       </header>
 
       {toast ? <p className="mt-4 text-sm text-slate-700">{toast}</p> : null}
@@ -105,7 +102,7 @@ export default function UserKeyManager({ storageRevision }) {
                           onClick={selectAllPem}
                           onMouseUp={(e) => e.preventDefault()}
                         />
-                        <p className="text-xs text-slate-500">Click to select all, then copy.</p>
+                       
                       </div>
                     </td>
 
@@ -121,8 +118,7 @@ export default function UserKeyManager({ storageRevision }) {
                           onClick={selectAllPem}
                           onMouseUp={(e) => e.preventDefault()}
                         />
-                        <p className="text-xs text-slate-500">Click to select all, then copy.</p>
-                        <p className="text-xs text-slate-500">Private keys are sensitive; handle with care.</p>
+    
                       </div>
                     </td>
 
@@ -151,9 +147,6 @@ export default function UserKeyManager({ storageRevision }) {
         </table>
       </div>
 
-      <p className="mt-3 text-xs text-slate-500" title="Stored under dss.userKeys">
-        Tip: This is local-only storage. Clearing site data will remove saved keys.
-      </p>
     </section>
   )
 }

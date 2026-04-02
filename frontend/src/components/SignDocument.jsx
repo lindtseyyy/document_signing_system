@@ -94,7 +94,7 @@ export default function SignDocument({
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <header className="space-y-2">
-        <h2 className="text-lg font-semibold text-slate-900">2) Sign Document</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Sign Document</h2>
 
       </header>
 
