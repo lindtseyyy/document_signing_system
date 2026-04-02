@@ -1,0 +1,353 @@
+/**
+ * services/cryptoServices.js
+ * Cryptography service using Node.js built-in crypto with DSA keys.
+ *
+ * Requirements implemented:
+ * - DSA key generation via crypto.generateKeyPair('dsa')
+ * - Signing/verifying via crypto.sign / crypto.verify
+ * - SHA-256 hashing (hex) returned alongside signature/verification
+ * - No persistence (no DB, no filesystem)
+ */
+
+const crypto = require("node:crypto");
+
+/**
+ * Custom API error that carries an HTTP status code and optional details.
+ */
+class ApiError extends Error {
+  /**
+   * @param {number} statusCode HTTP status code.
+   * @param {string} message Error message.
+   * @param {any} [details] Optional diagnostic details for 4xx errors.
+   */
+  constructor(statusCode, message, details) {
+    super(message);
+    this.name = "ApiError";
+    this.statusCode = statusCode;
+    if (typeof details !== "undefined") {
+      this.details = details;
+    }
+  }
+}
+
+/**
+ * Ensures a value is a string. Allows empty strings unless allowEmpty is false.
+ * @param {any} value Value to validate.
+ * @param {string} fieldName Field name for error details.
+ * @param {{ allowEmpty?: boolean }} [options] Options.
+ * @returns {string} The validated string.
+ * @throws {ApiError} If validation fails.
+ */
+function requireString(value, fieldName, options = {}) {
+  const { allowEmpty = true } = options;
+
+  if (typeof value !== "string") {
+    throw new ApiError(400, "Bad Request", {
+      field: fieldName,
+      issue: "must be a string"
+    });
+  }
+
+  if (!allowEmpty && value.length === 0) {
+    throw new ApiError(400, "Bad Request", {
+      field: fieldName,
+      issue: "must not be empty"
+    });
+  }
+
+  return value;
+}
+
+/**
+ * Ensures the document is provided as either a UTF-8 string or a Buffer (raw bytes).
+ * @param {any} value Document content.
+ * @returns {Buffer} Document bytes.
+ * @throws {ApiError} If validation fails.
+ */
+function requireDocumentBytes(value) {
+  if (Buffer.isBuffer(value)) return value;
+  if (typeof value === "string") return Buffer.from(value, "utf8");
+
+  throw new ApiError(400, "Bad Request", {
+    field: "document",
+    issue: "must be a string or a file"
+  });
+}
+
+/**
+ * Computes SHA-256 hash for raw bytes.
+ * @param {Buffer} bytes Document bytes.
+ * @returns {string} Hex-encoded SHA-256 hash.
+ */
+function sha256HexFromBytes(bytes) {
+  // Critical logic: hashing must be done on the exact bytes signed/verified.
+  return crypto.createHash("sha256").update(bytes).digest("hex");
+}
+
+/**
+ * Validates that a base64 string is well-formed.
+ * @param {string} value Base64 string.
+ * @param {string} fieldName Field name for error details.
+ * @returns {string} The validated base64 string.
+ * @throws {ApiError} If invalid.
+ */
+function requireBase64(value, fieldName) {
+  requireString(value, fieldName, { allowEmpty: false });
+
+  // Strict-ish base64 validation (no whitespace; correct padding).
+  const base64Regex =
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+  if (!base64Regex.test(value)) {
+    throw new ApiError(400, "Bad Request", {
+      field: fieldName,
+      issue: "must be valid base64"
+    });
+  }
+
+  return value;
+}
+
+/**
+ * Parses a PEM-encoded private key into a KeyObject and ensures it is usable.
+ * @param {string} privateKeyPem PEM-encoded private key.
+ * @returns {crypto.KeyObject} Parsed private key KeyObject.
+ * @throws {ApiError} If invalid or unsupported.
+ */
+function parsePrivateKey(privateKeyPem) {
+  requireString(privateKeyPem, "privateKey", { allowEmpty: false });
+
+  try {
+    // Critical logic: createPrivateKey validates the PEM structure.
+    const keyObject = crypto.createPrivateKey({
+      key: privateKeyPem,
+      format: "pem"
+    });
+    return keyObject;
+  } catch (err) {
+    throw new ApiError(400, "Bad Request", {
+      field: "privateKey",
+      issue: "must be a valid unencrypted PEM private key",
+      cause: err?.message
+    });
+  }
+}
+
+/**
+ * Parses a PEM-encoded public key into a KeyObject and ensures it is usable.
+ * @param {string} publicKeyPem PEM-encoded public key.
+ * @returns {crypto.KeyObject} Parsed public key KeyObject.
+ * @throws {ApiError} If invalid or unsupported.
+ */
+function parsePublicKey(publicKeyPem) {
+  try {
+    requireString(publicKeyPem, "publicKey", { allowEmpty: false });
+
+    // Critical logic: createPublicKey validates the PEM structure.
+    const keyObject = crypto.createPublicKey({
+      key: publicKeyPem,
+      format: "pem"
+    });
+
+    // Ensure the key is usable for this app: it must be a DSA public key.
+    // (A valid-but-nonmatching DSA key is handled later as isValid=false, not an error.)
+    if (keyObject?.type !== "public" || keyObject?.asymmetricKeyType !== "dsa") {
+      throw new ApiError(400, "Wrong public key", {
+        field: "publicKey",
+        issue: "must be a valid DSA public key"
+      });
+    }
+
+    return keyObject;
+  } catch (err) {
+    if (err instanceof ApiError) {
+      if (err?.details?.field === "publicKey" && err.message !== "Wrong public key") {
+        throw new ApiError(400, "Wrong public key", err.details);
+      }
+
+      throw err;
+    }
+
+    throw new ApiError(400, "Wrong public key", {
+      field: "publicKey",
+      issue: "must be a valid DSA PEM public key",
+      cause: err?.message
+    });
+  }
+}
+
+/**
+ * Generates a DSA key pair (PEM-encoded).
+ * @returns {Promise<{publicKey: string, privateKey: string}>} Key pair in PEM format.
+ * @throws {ApiError} If generation fails.
+ */
+async function generateKeys() {
+  // Use a Promise wrapper to make generateKeyPair awaitable.
+  const keyPair = await new Promise((resolve, reject) => {
+    crypto.generateKeyPair(
+      "dsa",
+      {
+        // Common secure default sizes. divisorLength can be 224 or 256 for 2048-bit modulus.
+        modulusLength: 2048,
+        divisorLength: 224,
+        publicKeyEncoding: { type: "spki", format: "pem" },
+        privateKeyEncoding: { type: "pkcs8", format: "pem" }
+      },
+      (err, publicKey, privateKey) => {
+        if (err) return reject(err);
+        resolve({ publicKey, privateKey });
+      }
+    );
+  }).catch((err) => {
+    throw new ApiError(500, "Internal Server Error", {
+      issue: "key generation failed",
+      cause: err?.message
+    });
+  });
+
+  return keyPair;
+}
+
+/**
+ * Signs a document using a PEM private key.
+ * @param {{document: any, privateKey: any}} input Input values (validated internally).
+ * @returns {Promise<{signature: string, hash: string}>} Signature (base64) and document hash (hex).
+ * @throws {ApiError} If validation fails or signing fails.
+ */
+async function signDocument(input) {
+  const documentBytes = requireDocumentBytes(input?.document);
+  const privateKeyObject = parsePrivateKey(input?.privateKey);
+
+  const hash = sha256HexFromBytes(documentBytes);
+
+  try {
+    // For DSA, the digest algorithm is SHA-256 per requirement.
+    // Node/OpenSSL will handle DSA signing for the given key.
+    const signature = crypto.sign("sha256", documentBytes, privateKeyObject);
+
+    return {
+      signature: signature.toString("base64"),
+      hash
+    };
+  } catch (err) {
+    throw new ApiError(400, "Bad Request", {
+      issue: "signing failed",
+      cause: err?.message
+    });
+  }
+}
+
+/**
+ * Verifies a signature against a document using a PEM public key.
+ * @param {{document: any, signature: any, publicKey: any}} input Input values (validated internally).
+ * @returns {Promise<{isValid: boolean, hash: string}>} Verification result and document hash (hex).
+ * @throws {ApiError} If validation fails or verification fails unexpectedly.
+ */
+async function verifySignature(input) {
+  const missing = [];
+
+  const documentValue = input?.document;
+  if (
+    typeof documentValue === "undefined" ||
+    documentValue === null ||
+    (typeof documentValue === "string" && documentValue.length === 0) ||
+    (Buffer.isBuffer(documentValue) && documentValue.length === 0)
+  ) {
+    missing.push("document");
+  }
+
+  const signatureValue = input?.signature;
+  if (
+    typeof signatureValue === "undefined" ||
+    signatureValue === null ||
+    (typeof signatureValue === "string" && signatureValue.trim().length === 0)
+  ) {
+    missing.push("signature");
+  }
+
+  const publicKeyValue = input?.publicKey;
+  if (
+    typeof publicKeyValue === "undefined" ||
+    publicKeyValue === null ||
+    (typeof publicKeyValue === "string" && publicKeyValue.trim().length === 0)
+  ) {
+    missing.push("publicKey");
+  }
+
+  if (missing.length > 0) {
+    throw new ApiError(
+      400,
+      "⚠️ Missing information! Please make sure the document, signature, and public key are all provided.",
+      { missing }
+    );
+  }
+
+  const documentBytes = requireDocumentBytes(input?.document);
+
+  let signatureBase64;
+  try {
+    signatureBase64 = requireBase64(input?.signature, "signature");
+  } catch (err) {
+    if (
+      err instanceof ApiError &&
+      err.statusCode === 400 &&
+      err?.details?.field === "signature" &&
+      err?.details?.issue === "must be valid base64"
+    ) {
+      throw new ApiError(
+        400,
+        "❌ Invalid signature! The signature itself appears to have been altered. Verification failed.",
+        {
+          field: "signature",
+          issue: "must be valid base64"
+        }
+      );
+    }
+
+    throw err;
+  }
+
+  const publicKeyObject = parsePublicKey(input?.publicKey);
+
+  const hash = sha256HexFromBytes(documentBytes);
+
+  try {
+    const signature = Buffer.from(signatureBase64, "base64");
+
+    // Critical logic: algorithm and encoding must match signing.
+    const isValid = crypto.verify("sha256", documentBytes, publicKeyObject, signature);
+
+    return { isValid, hash };
+  } catch (err) {
+    // Nice-to-have: if OpenSSL throws due to a key-type mismatch, surface a clearer error.
+    // (Non-matching signatures should still return isValid=false, not throw.)
+    const maybeKeyTypeMismatch =
+      typeof err?.message === "string" &&
+      (err.message.includes("key type") ||
+        err.message.includes("public key") ||
+        err.message.includes("PEM routines") ||
+        err.message.includes("EVP_PKEY") ||
+        err.message.includes("expecting"));
+
+    if (maybeKeyTypeMismatch) {
+      throw new ApiError(400, "Wrong public key", {
+        field: "publicKey",
+        issue: "must be a valid DSA public key",
+        cause: err?.message
+      });
+    }
+
+    throw new ApiError(400, "Wrong public key", {
+      field: "publicKey",
+      issue: "verification failed",
+      cause: err?.message
+    });
+  }
+}
+
+module.exports = {
+  ApiError,
+  generateKeys,
+  signDocument,
+  verifySignature
+};
