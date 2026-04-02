@@ -17,6 +17,15 @@ export default function UserKeyManager({ storageRevision }) {
   const [users, setUsers] = useState(/** @type {StoredUserKeys[]} */ ([]))
   const [toast, setToast] = useState('')
 
+  /**
+   * Select the full PEM so copy includes BEGIN/END lines.
+   * @param {import('react').SyntheticEvent<HTMLTextAreaElement>} event
+   */
+  function selectAllPem(event) {
+    const el = event.currentTarget
+    el.select()
+  }
+
   useEffect(() => {
     setUsers(loadUserKeys())
   }, [storageRevision])
@@ -92,7 +101,11 @@ export default function UserKeyManager({ storageRevision }) {
                           readOnly
                           spellCheck={false}
                           title="Public key (safe to share)"
+                          onFocus={selectAllPem}
+                          onClick={selectAllPem}
+                          onMouseUp={(e) => e.preventDefault()}
                         />
+                        <p className="text-xs text-slate-500">Click to select all, then copy.</p>
                       </div>
                     </td>
 
@@ -104,7 +117,11 @@ export default function UserKeyManager({ storageRevision }) {
                           readOnly
                           spellCheck={false}
                           title="Private key (keep secret)"
+                          onFocus={selectAllPem}
+                          onClick={selectAllPem}
+                          onMouseUp={(e) => e.preventDefault()}
                         />
+                        <p className="text-xs text-slate-500">Click to select all, then copy.</p>
                         <p className="text-xs text-slate-500">Private keys are sensitive; handle with care.</p>
                       </div>
                     </td>

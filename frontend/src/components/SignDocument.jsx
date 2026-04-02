@@ -35,8 +35,6 @@ function validateDocumentFile(file) {
  *   publicKey: string,
  *   privateKey: string,
  *   setPrivateKey: (next: string) => void,
- *   signature: string,
- *   setSignature: (next: string) => void,
  *   onSignedSnapshot: (snapshot: { hash: string, signatureSnapshot: string, publicKeySnapshot: string }) => void,
  * }} props
  */
@@ -46,12 +44,11 @@ export default function SignDocument({
   publicKey,
   privateKey,
   setPrivateKey,
-  signature,
-  setSignature,
   onSignedSnapshot,
 }) {
   const [isLoading, setIsLoading] = useState(false)
   const [serverHash, setServerHash] = useState('')
+  const [signedSignature, setSignedSignature] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [documentFileError, setDocumentFileError] = useState('')
 
@@ -61,12 +58,16 @@ export default function SignDocument({
    */
   async function handleSign() {
     setErrorMessage('')
+    if (documentFileError) {
+      setErrorMessage(documentFileError)
+      return
+    }
     if (!documentFile) {
       setErrorMessage('Choose a document file first.')
       return
     }
-    if (documentFileError) {
-      setErrorMessage(documentFileError)
+    if (!String(privateKey || '').trim()) {
+      setErrorMessage('Private key is required.')
       return
     }
     setIsLoading(true)
@@ -75,7 +76,7 @@ export default function SignDocument({
       const data = await signDocument({ document: documentFile, privateKey })
       const nextSignature = data?.signature || ''
       const nextHash = data?.hash || ''
-      setSignature(nextSignature)
+      setSignedSignature(nextSignature)
       setServerHash(nextHash)
 
       onSignedSnapshot({
@@ -110,6 +111,7 @@ export default function SignDocument({
                 const nextFile = e.target.files?.[0] || null
                 setErrorMessage('')
                 setServerHash('')
+                setSignedSignature('')
 
                 if (!nextFile) {
                   setDocumentFile(null)
@@ -181,9 +183,9 @@ export default function SignDocument({
             <label className="text-sm font-medium text-slate-700">Signature (base64)</label>
             <textarea
               className="w-full min-h-24 rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs text-slate-900"
-              value={signature || ''}
-              onChange={(e) => setSignature(e.target.value)}
-              placeholder="After signing, the signature appears here…"
+              value={signedSignature || ''}
+              readOnly
+              placeholder="After signing, the signature appears here (copy it to Verify)…"
               spellCheck={false}
             />
           </div>

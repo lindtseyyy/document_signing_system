@@ -18,6 +18,9 @@ function PemField({ label, value }) {
       <textarea
         className="w-full min-h-28 rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs text-slate-900 whitespace-pre-wrap break-normal"
         value={value || ''}
+        onFocus={(e) => e.target.select()}
+        onClick={(e) => e.target.select()}
+        onMouseUp={(e) => e.preventDefault()}
         readOnly
         spellCheck={false}
       />
@@ -28,16 +31,15 @@ function PemField({ label, value }) {
 /**
  * KeyGenerator component.
  * @param {{
- *   publicKey: string,
- *   privateKey: string,
- *   onKeysGenerated: (keys: { publicKey: string, privateKey: string }) => void,
  *   onUserKeysStored?: () => void,
  * }} props
  */
-export default function KeyGenerator({ publicKey, privateKey, onKeysGenerated, onUserKeysStored }) {
+export default function KeyGenerator({ onUserKeysStored }) {
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [userName, setUserName] = useState('')
+  const [generatedPublicKey, setGeneratedPublicKey] = useState('')
+  const [generatedPrivateKey, setGeneratedPrivateKey] = useState('')
 
   /**
    * Call the backend to generate a keypair.
@@ -58,7 +60,8 @@ export default function KeyGenerator({ publicKey, privateKey, onKeysGenerated, o
       const data = await generateKeys()
       const nextPublicKey = data?.publicKey || ''
       const nextPrivateKey = data?.privateKey || ''
-      onKeysGenerated({ publicKey: nextPublicKey, privateKey: nextPrivateKey })
+      setGeneratedPublicKey(nextPublicKey)
+      setGeneratedPrivateKey(nextPrivateKey)
 
       try {
         upsertUserKeys({ owner, publicKey: nextPublicKey, privateKey: nextPrivateKey })
@@ -119,8 +122,8 @@ export default function KeyGenerator({ publicKey, privateKey, onKeysGenerated, o
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-4">
-        <PemField label="Public Key (PEM)" value={publicKey} />
-        <PemField label="Private Key (PEM)" value={privateKey} />
+        <PemField label="Public Key (PEM)" value={generatedPublicKey} />
+        <PemField label="Private Key (PEM)" value={generatedPrivateKey} />
       </div>
     </section>
   )

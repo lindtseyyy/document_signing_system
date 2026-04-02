@@ -33,8 +33,29 @@ export const api = createApiClient()
 export function extractApiErrorMessage(err) {
   const maybeAxiosError = /** @type {any} */ (err)
   const messageFromBackend =
-    maybeAxiosError?.response?.data?.error?.message ||
-    maybeAxiosError?.response?.data?.message
+    maybeAxiosError?.response?.data?.error?.message || maybeAxiosError?.response?.data?.message
+
+  const normalizedMessage = typeof messageFromBackend === 'string' ? messageFromBackend.trim() : ''
+  const isGenericBackendMessage =
+    !normalizedMessage ||
+    normalizedMessage === 'Bad Request' ||
+    normalizedMessage === 'Internal Server Error'
+
+  // Only use backend details when the chosen backend message is generic/empty.
+  if (isGenericBackendMessage) {
+    const detailsFromBackend =
+      maybeAxiosError?.response?.data?.error?.details ?? maybeAxiosError?.response?.data?.details
+
+    if (detailsFromBackend && typeof detailsFromBackend === 'object') {
+      if (Array.isArray(detailsFromBackend.missing) && detailsFromBackend.missing.length > 0) {
+        return `Missing: ${detailsFromBackend.missing.join(', ')}`
+      }
+
+      if (typeof detailsFromBackend.field === 'string' && typeof detailsFromBackend.issue === 'string') {
+        return `${detailsFromBackend.field}: ${detailsFromBackend.issue}`
+      }
+    }
+  }
 
   if (typeof messageFromBackend === 'string' && messageFromBackend.trim()) {
     return messageFromBackend

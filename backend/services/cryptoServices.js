@@ -115,7 +115,49 @@ function requireBase64(value, fieldName) {
  * @throws {ApiError} If invalid or unsupported.
  */
 function parsePrivateKey(privateKeyPem) {
-  requireString(privateKeyPem, "privateKey", { allowEmpty: false });
+  try {
+    requireString(privateKeyPem, "privateKey", { allowEmpty: false });
+  } catch (err) {
+    if (err instanceof ApiError && err.statusCode === 400 && err?.details?.field === "privateKey") {
+      throw new ApiError(
+        400,
+        "❌ Invalid private key! Please paste a valid DSA PEM private key.",
+        err.details
+      );
+    }
+    throw err;
+  }
+
+  // Lightweight pre-parse checks to catch common copy/paste mistakes.
+  const pemText = privateKeyPem.trim();
+
+  if (pemText.includes("BEGIN PUBLIC KEY") || pemText.includes("BEGIN DSA PUBLIC KEY")) {
+    throw new ApiError(
+      400,
+      "❌ That looks like a public key! Please paste the PRIVATE key PEM to sign.",
+      { field: "privateKey", issue: "must be a private key PEM" }
+    );
+  }
+
+  const hasLiteralEscapedNewlines = pemText.includes("\\n");
+  const hasRealNewlines = /[\r\n]/.test(pemText);
+  if (hasLiteralEscapedNewlines && !hasRealNewlines) {
+    throw new ApiError(
+      400,
+      "❌ The private key appears to have escaped newlines (\\n). Replace them with real line breaks, or copy the key directly from the textarea.",
+      { field: "privateKey", issue: "must contain real line breaks (not escaped \\\\n sequences)" }
+    );
+  }
+
+  const hasPemBegin = /-----BEGIN [A-Z0-9 ]+-----/.test(pemText);
+  const hasPemEnd = /-----END [A-Z0-9 ]+-----/.test(pemText);
+  if (!hasPemBegin || !hasPemEnd) {
+    throw new ApiError(
+      400,
+      "❌ Private key PEM looks incomplete. Make sure you copied the entire block including the BEGIN/END lines.",
+      { field: "privateKey", issue: "must include full PEM block (BEGIN/END lines)" }
+    );
+  }
 
   try {
     // Critical logic: createPrivateKey validates the PEM structure.
@@ -123,12 +165,58 @@ function parsePrivateKey(privateKeyPem) {
       key: privateKeyPem,
       format: "pem"
     });
+
+    if (keyObject?.type !== "private") {
+      throw new ApiError(400, "❌ Invalid private key! Please paste a valid DSA PEM private key.", {
+        field: "privateKey",
+        issue: "must be a valid private key (PEM)"
+      });
+    }
+
+    if (keyObject?.asymmetricKeyType !== "dsa") {
+      const foundType = typeof keyObject?.asymmetricKeyType === "string" && keyObject.asymmetricKeyType
+        ? keyObject.asymmetricKeyType
+        : "unknown";
+
+      throw new ApiError(
+        400,
+        `❌ Wrong private key type: expected a DSA private key, but got ${foundType}.`,
+        {
+          field: "privateKey",
+          issue: "must be a valid DSA private key (PEM)",
+          foundType
+        }
+      );
+    }
+
     return keyObject;
   } catch (err) {
-    throw new ApiError(400, "Bad Request", {
+    if (err instanceof ApiError) throw err;
+
+    const rawMessage = typeof err?.message === "string" ? err.message : "";
+    const lowerMessage = rawMessage.toLowerCase();
+
+    const looksEncrypted =
+      lowerMessage.includes("encrypted") ||
+      lowerMessage.includes("passphrase") ||
+      lowerMessage.includes("pass phrase") ||
+      lowerMessage.includes("bad decrypt") ||
+      lowerMessage.includes("bad password") ||
+      lowerMessage.includes("wrong tag") ||
+      lowerMessage.includes("unknown cipher");
+
+    const issue = looksEncrypted
+      ? "must be an unencrypted DSA PEM private key (no passphrase)"
+      : "must be a valid DSA PEM private key";
+
+    const message = looksEncrypted
+      ? "❌ Encrypted private key! Please paste an unencrypted DSA PEM private key."
+      : "❌ Invalid private key! Please paste a valid DSA PEM private key.";
+
+    throw new ApiError(400, message, {
       field: "privateKey",
-      issue: "must be a valid unencrypted PEM private key",
-      cause: err?.message
+      issue,
+      cause: rawMessage
     });
   }
 }
@@ -215,6 +303,35 @@ async function generateKeys() {
  * @throws {ApiError} If validation fails or signing fails.
  */
 async function signDocument(input) {
+  const missing = [];
+
+  const documentValue = input?.document;
+  if (
+    typeof documentValue === "undefined" ||
+    documentValue === null ||
+    (typeof documentValue === "string" && documentValue.length === 0) ||
+    (Buffer.isBuffer(documentValue) && documentValue.length === 0)
+  ) {
+    missing.push("document");
+  }
+
+  const privateKeyValue = input?.privateKey;
+  if (
+    typeof privateKeyValue === "undefined" ||
+    privateKeyValue === null ||
+    (typeof privateKeyValue === "string" && privateKeyValue.trim().length === 0)
+  ) {
+    missing.push("privateKey");
+  }
+
+  if (missing.length > 0) {
+    throw new ApiError(
+      400,
+      "⚠️ Missing information! Please make sure the document and private key are both provided.",
+      { missing }
+    );
+  }
+
   const documentBytes = requireDocumentBytes(input?.document);
   const privateKeyObject = parsePrivateKey(input?.privateKey);
 

@@ -65,15 +65,6 @@ export default function App() {
   // }, [document])
 
   /**
-   * Callback used by KeyGenerator to populate shared key state.
-   * @param {{ publicKey: string, privateKey: string }} keys
-   */
-  function handleKeysGenerated(keys) {
-    setPublicKey(keys.publicKey || '')
-    setPrivateKey(keys.privateKey || '')
-  }
-
-  /**
    * Capture the signing-time snapshots so Verify can classify mismatch scenarios.
    * @param {{ hash: string, signatureSnapshot: string, publicKeySnapshot: string }} snapshot
    */
@@ -127,9 +118,6 @@ export default function App() {
         <section className="mt-6 grid grid-cols-1 gap-6">
           <div className={activeSection === 'keys' ? '' : 'hidden'} aria-hidden={activeSection !== 'keys'}>
             <KeyGenerator
-              publicKey={publicKey}
-              privateKey={privateKey}
-              onKeysGenerated={handleKeysGenerated}
               onUserKeysStored={() => setUserKeysRevision((n) => n + 1)}
             />
           </div>
@@ -148,8 +136,6 @@ export default function App() {
               publicKey={publicKey}
               privateKey={privateKey}
               setPrivateKey={setPrivateKey}
-              signature={signature}
-              setSignature={setSignature}
               onSignedSnapshot={handleSignedSnapshot}
             />
           </div>

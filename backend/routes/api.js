@@ -53,13 +53,36 @@ function uploadSingle(fieldName) {
   };
 }
 
+/**
+ * Only run Multer when the request is actually multipart/form-data.
+ * This keeps the endpoints compatible with JSON bodies.
+ * @param {string} fieldName
+ */
+function maybeUploadSingle(fieldName) {
+  return (req, res, next) => {
+    const isMultipart = typeof req.is === "function" && req.is("multipart/form-data");
+    if (isMultipart) {
+      return uploadSingle(fieldName)(req, res, next);
+    }
+
+    const rawHeader = req.headers["content-type"];
+    const contentType = Array.isArray(rawHeader)
+      ? rawHeader.join(";")
+      : String(rawHeader || "");
+    if (contentType.trim().toLowerCase().startsWith("multipart/form-data")) {
+      return uploadSingle(fieldName)(req, res, next);
+    }
+    return next();
+  };
+}
+
 // POST /api/generate-keys -> returns { publicKey: PEM, privateKey: PEM }
 router.post("/generate-keys", wrapAsync(cryptoController.generateKeys));
 
 // POST /api/sign (multipart) fields: document(file), privateKey(PEM) -> returns { signature: base64, hash: hex }
-router.post("/sign", uploadSingle("document"), wrapAsync(cryptoController.sign));
+router.post("/sign", maybeUploadSingle("document"), wrapAsync(cryptoController.sign));
 
 // POST /api/verify (multipart) fields: document(file), signature(base64), publicKey(PEM) -> returns { isValid: boolean, hash: hex }
-router.post("/verify", uploadSingle("document"), wrapAsync(cryptoController.verify));
+router.post("/verify", maybeUploadSingle("document"), wrapAsync(cryptoController.verify));
 
 module.exports = router;
