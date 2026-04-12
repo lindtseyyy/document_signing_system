@@ -7,9 +7,9 @@ import { useState } from 'react'
 import { extractApiErrorMessage, verifyDocument } from '../lib/api'
 
 const SCENARIO_MESSAGES = {
-  valid: '✅ Signature is valid! The document is authentic and has not been altered.',
+  valid: '✅ Signature is valid! The document and timestamp are authentic and have not been altered.',
   modifiedDoc:
-    '❌ Invalid signature! The document has been modified since it was signed. Integrity check failed.',
+    'Signature verification failed. This may indicate that either the document content or its associated timestamp has been modified..',
   wrongKey:
     '❌ Invalid signature! Either the signature is incorrect or the public key does not match the signer’s private key.',
   alteredSig:

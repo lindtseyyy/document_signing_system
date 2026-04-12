@@ -11,7 +11,7 @@ const DOCUMENT_ACCEPT =
   '.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain'
 
 function validateDocumentFile(file) {
-  if (!file) return 'Choose a document file first.'
+  if (!file) return '⚠️ Missing information! Please make sure the document is provided.'
   if (file.size > MAX_DOCUMENT_SIZE_BYTES) return 'File is too large. Max size is 10 MiB.'
 
   const name = (file.name || '').toLowerCase()
@@ -25,6 +25,28 @@ function validateDocumentFile(file) {
 
   if (allowedExts.has(ext) || allowedTypes.has(file.type)) return ''
   return 'Unsupported file type. Please upload a PDF, DOCX, or TXT.'
+}
+
+/**
+ * A small status badge for scenario messages.
+ * @param {{ statusMessage: string }} props
+ */
+function VerificationBadge({ statusMessage }) {
+  if (!statusMessage) return null
+
+  const classes = statusMessage.startsWith('✅')
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : statusMessage.startsWith('⚠️')
+      ? 'border-amber-200 bg-amber-50 text-amber-800'
+      : 'border-red-200 bg-red-50 text-red-800'
+
+  return (
+    <div
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${classes}`}
+    >
+      {statusMessage}
+    </div>
+  )
 }
 
 /**
@@ -63,12 +85,22 @@ export default function SignDocument({
       setErrorMessage(documentFileError)
       return
     }
-    if (!documentFile) {
-      setErrorMessage('Choose a document file first.')
+
+    const isDocumentMissing = !documentFile
+    const isPrivateKeyMissing = !String(privateKey || '').trim()
+
+    if (isDocumentMissing && isPrivateKeyMissing) {
+      setErrorMessage(
+        '⚠️ Missing information! Please make sure the document, and private key are all provided.'
+      )
       return
     }
-    if (!String(privateKey || '').trim()) {
-      setErrorMessage('Private key is required.')
+    if (isDocumentMissing) {
+      setErrorMessage('⚠️ Missing information! Please make sure the document is provided.')
+      return
+    }
+    if (isPrivateKeyMissing) {
+      setErrorMessage('⚠️ Missing information! Please make sure the private key is provided.')
       return
     }
     setIsLoading(true)
@@ -145,7 +177,7 @@ export default function SignDocument({
           </div>
 
           {documentFileError ? (
-            <p className="text-sm text-red-700">{documentFileError}</p>
+            <VerificationBadge statusMessage={documentFileError} />
           ) : (
             <p className="text-sm text-slate-500">
               {documentFile ? `${documentFile.name} (${documentFile.size} bytes)` : 'Upload a PDF, DOCX, or TXT (max 10 MiB).'}
@@ -175,7 +207,9 @@ export default function SignDocument({
           </button>
 
           {errorMessage ? (
-            <p className="text-sm text-red-700">{errorMessage}</p>
+            <div className="flex-1 min-w-0">
+              <VerificationBadge statusMessage={errorMessage} />
+            </div>
           ) : (
             <p className="text-sm text-slate-500">
              

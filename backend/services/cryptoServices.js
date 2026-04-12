@@ -460,7 +460,7 @@ async function signDocument(input) {
   if (missing.length > 0) {
     throw new ApiError(
       400,
-      "⚠️ Missing information! Please make sure the document and private key are both provided.",
+      "⚠️ Missing information! Please make sure the document, and private key are all provided.",
       { missing }
     );
   }
