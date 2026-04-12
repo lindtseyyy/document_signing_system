@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react'
 import PasswordModal from './PasswordModal'
 import { deleteUserKeys, loadUserKeys, normalizeOwner, verifyUserPassword } from '../lib/userKeysStorage'
+import { useToast } from '../hooks/useToast'
 
 /**
  * Stored user shape is managed by userKeysStorage.
@@ -18,8 +19,7 @@ import { deleteUserKeys, loadUserKeys, normalizeOwner, verifyUserPassword } from
  */
 export default function UserKeyManager({ storageRevision }) {
   const [users, setUsers] = useState(/** @type {StoredUserKeys[]} */ ([]))
-  const [toast, setToast] = useState('')
-  const [errorMessage, setErrorMessage] = useState('')
+  const toast = useToast()
 
   // --- Private key protection state ---
   // We treat password verification as a *session-only unlock*.
@@ -48,18 +48,6 @@ export default function UserKeyManager({ storageRevision }) {
   useEffect(() => {
     setUsers(loadUserKeys())
   }, [storageRevision])
-
-  useEffect(() => {
-    if (!toast) return
-    const t = window.setTimeout(() => setToast(''), 1800)
-    return () => window.clearTimeout(t)
-  }, [toast])
-
-  useEffect(() => {
-    if (!errorMessage) return
-    const t = window.setTimeout(() => setErrorMessage(''), 2200)
-    return () => window.clearTimeout(t)
-  }, [errorMessage])
 
   /**
    * @param {string} owner
@@ -101,9 +89,35 @@ export default function UserKeyManager({ storageRevision }) {
   async function copyToClipboard(text) {
     try {
       await navigator.clipboard.writeText(String(text || ''))
-      setToast('Copied private key to clipboard.')
+      toast.success('Copied private key to clipboard.')
     } catch {
-      setErrorMessage('Failed to copy to clipboard.')
+      toast.error('Failed to copy to clipboard.')
+    }
+  }
+
+  /**
+   * Copy a public key PEM using the Clipboard API.
+   * Public keys are safe to copy without password verification.
+   * @param {string} pem
+   */
+  async function copyPublicKeyToClipboard(pem) {
+    const pemRaw = String(pem || '')
+    const pemTrimmed = pemRaw.trim()
+
+    if (!pemTrimmed) {
+      toast.error('No public key to copy.')
+      return
+    }
+
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard API not available')
+      }
+
+      await navigator.clipboard.writeText(pemRaw)
+      toast.success('Public key copied to clipboard.')
+    } catch {
+      toast.error('Failed to copy public key.')
     }
   }
 
@@ -118,18 +132,22 @@ export default function UserKeyManager({ storageRevision }) {
     if (!ok) return
 
     // Secure deletion: remove the entry from localStorage via deleteUserKeys(owner).
-    setUsers(deleteUserKeys(owner))
-    setUnlockedOwners((prev) => {
-      const next = new Set(prev)
-      next.delete(owner)
-      return next
-    })
-    setVisibleOwners((prev) => {
-      const next = new Set(prev)
-      next.delete(owner)
-      return next
-    })
-    setToast(`Deleted “${owner}”.`)
+    try {
+      setUsers(deleteUserKeys(owner))
+      setUnlockedOwners((prev) => {
+        const next = new Set(prev)
+        next.delete(owner)
+        return next
+      })
+      setVisibleOwners((prev) => {
+        const next = new Set(prev)
+        next.delete(owner)
+        return next
+      })
+      toast.success(`Deleted “${owner}”.`)
+    } catch {
+      toast.error('Failed to delete keys.')
+    }
   }
 
   /**
@@ -176,6 +194,14 @@ export default function UserKeyManager({ storageRevision }) {
     requestPassword(owner, 'copy')
   }
 
+  /**
+   * Copy a user's public key PEM (no password required).
+   * @param {StoredUserKeys} user
+   */
+  function handleCopyPublicKey(user) {
+    void copyPublicKeyToClipboard(user?.publicKey || '')
+  }
+
   function closePasswordModalWithCancel() {
     setPasswordModalOpen(false)
     setPasswordModalSubmitting(false)
@@ -202,6 +228,7 @@ export default function UserKeyManager({ storageRevision }) {
     if (!ok) {
       // Required exact error message on incorrect password.
       setPasswordModalError('Incorrect password. Access denied.')
+      toast.error('Incorrect password. Access denied.')
       setPasswordModalSubmitting(false)
       return
     }
@@ -232,9 +259,6 @@ export default function UserKeyManager({ storageRevision }) {
       <header className="space-y-2">
         <h2 className="text-lg font-semibold text-slate-900">User Key Management</h2>
       </header>
-
-      {toast ? <p className="mt-4 text-sm text-slate-700">{toast}</p> : null}
-      {errorMessage ? <p className="mt-2 text-sm text-red-700">{errorMessage}</p> : null}
 
       <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200">
         <table className="min-w-full divide-y divide-slate-200">
@@ -282,7 +306,17 @@ export default function UserKeyManager({ storageRevision }) {
                           onClick={selectAllPem}
                           onMouseUp={(e) => e.preventDefault()}
                         />
-                       
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPublicKey(user)}
+                            disabled={!String(user.publicKey || '').trim()}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            title="Copy public key to clipboard"
+                          >
+                            Copy Public Key
+                          </button>
+                        </div>
                       </div>
                     </td>
 
@@ -307,54 +341,32 @@ export default function UserKeyManager({ storageRevision }) {
                             {MASKED_PRIVATE_KEY}
                           </div>
                         )}
-    
+
+                        <div className="flex flex-wrap justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePrivateKey(user)}
+                            className="rounded-lg bg-yellow-500 px-3 py-2 text-sm font-medium text-white hover:bg-yellow-600"
+                            title={isVisible(user.owner) ? 'Hide private key' : 'Show private key (password required)'}
+                          >
+                            {isVisible(user.owner) ? 'Hide' : 'Show'}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleCopyPrivateKey(user)}
+                            disabled={!String(user.privateKey || '').trim()}
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            title={isUnlocked(user.owner) ? 'Copy private key to clipboard' : 'Verify password to copy private key'}
+                          >
+                            Copy Private Key
+                          </button>
+                        </div>
                       </div>
                     </td>
 
                     <td className="w-32 px-4 py-4">
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleTogglePrivateKey(user)}
-                          className="rounded-lg bg-yellow-500 px-3 py-2 text-sm font-medium text-white hover:bg-yellow-600"
-                          title={isVisible(user.owner) ? 'Hide private key' : 'Show private key (password required)'}
-                        >
-                          {isVisible(user.owner) ? 'Hide' : 'Show'}
-                        </button>
-
-                        <div className="relative inline-flex">
-                          <button
-                            type="button"
-                            disabled={!isUnlocked(user.owner)}
-                            onClick={() => handleCopyPrivateKey(user)}
-                            className={
-                              isUnlocked(user.owner)
-                                ? 'rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60'
-                                : 'rounded-lg bg-slate-100 px-3 py-2 text-sm font-medium text-slate-400 cursor-not-allowed'
-                            }
-                            title={
-                              isUnlocked(user.owner)
-                                ? 'Copy private key to clipboard'
-                                : 'Password verification required to copy'
-                            }
-                          >
-                            Copy Private Key
-                          </button>
-
-                          {!isUnlocked(user.owner) ? (
-                            // Button is disabled by default; this overlay captures the click attempt
-                            // to trigger password verification, without enabling copy.
-                            <button
-                              type="button"
-                              tabIndex={-1}
-                              aria-hidden="true"
-                              className="absolute inset-0"
-                              onClick={() => handleCopyPrivateKey(user)}
-                              title="Password verification required to copy"
-                            />
-                          ) : null}
-                        </div>
-
                         <button
                           type="button"
                           onClick={() => handleDelete(user)}

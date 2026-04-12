@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { hashPasswordMD5, signDocument as signDocumentLocal } from '../utils/cryptoUtils'
 import PasswordModal from './PasswordModal.jsx'
 import { loadUserKeys } from '../lib/userKeysStorage'
+import { useToast } from '../hooks/useToast'
 
 const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 const DOCUMENT_ACCEPT =
@@ -70,11 +71,11 @@ export default function SignDocument({
   setPrivateKey,
   onSignedSnapshot,
 }) {
+  const toast = useToast()
   const [isLoading, setIsLoading] = useState(false)
   const [serverHash, setServerHash] = useState('')
   const [signedSignature, setSignedSignature] = useState('')
   const [signedTimestamp, setSignedTimestamp] = useState('')
-  const [errorMessage, setErrorMessage] = useState('')
   const [documentFileError, setDocumentFileError] = useState('')
 
   // Phase 4.1: Password verification gate
@@ -117,9 +118,8 @@ export default function SignDocument({
     * Critical flow: the app hashes the document payload, then signs that hash with the private key.
    */
   async function handleSign() {
-    setErrorMessage('')
     if (documentFileError) {
-      setErrorMessage(documentFileError)
+      toast.error(documentFileError)
       return
     }
 
@@ -127,15 +127,15 @@ export default function SignDocument({
     const isPrivateKeyMissing = !String(privateKey || '').trim()
 
     if (isDocumentMissing && isPrivateKeyMissing) {
-      setErrorMessage('Please complete all required fields.')
+      toast.error('Please complete all required fields.')
       return
     }
     if (isDocumentMissing) {
-      setErrorMessage('Please complete all required fields.')
+      toast.error('Please complete all required fields.')
       return
     }
     if (isPrivateKeyMissing) {
-      setErrorMessage('Please complete all required fields.')
+      toast.error('Please complete all required fields.')
       return
     }
     setIsLoading(true)
@@ -155,9 +155,11 @@ export default function SignDocument({
         publicKeySnapshot: publicKey || '',
         timestamp: nextTimestamp,
       })
+
+      toast.success('Document signed successfully.')
     } catch (err) {
       const message = typeof err?.message === 'string' ? err.message.trim() : ''
-      setErrorMessage(message || 'Something went wrong. Please try again.')
+      toast.error(message || 'Something went wrong. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -169,13 +171,12 @@ export default function SignDocument({
    * - Only after successful password verification do we call the existing signing logic.
    */
   function handleSignClick() {
-    setErrorMessage('')
     setPasswordModalError('')
 
     const owner = inferSigningOwner()
     if (!owner) {
       // Without a determinable owner, we cannot authenticate; block signing.
-      setErrorMessage('Please complete all required fields.')
+      toast.error('Please complete all required fields.')
       return
     }
 
@@ -201,7 +202,6 @@ export default function SignDocument({
               className="sr-only"
               onChange={(e) => {
                 const nextFile = e.target.files?.[0] || null
-                setErrorMessage('')
                 setServerHash('')
                 setSignedSignature('')
                 setSignedTimestamp('')
@@ -261,16 +261,6 @@ export default function SignDocument({
           >
             {isLoading ? 'Signing…' : 'Sign'}
           </button>
-
-          {errorMessage ? (
-            <div className="flex-1 min-w-0">
-              <VerificationBadge statusMessage={errorMessage} />
-            </div>
-          ) : (
-            <p className="text-sm text-slate-500">
-             
-            </p>
-          )}
         </div>
 
         <div className="space-y-4">
@@ -310,7 +300,6 @@ export default function SignDocument({
           setIsPasswordModalOpen(false)
           setPendingOwner('')
           setPasswordModalError('')
-          setErrorMessage('')
         }}
         onConfirm={(password) => {
           const owner = String(pendingOwner || '').trim()
@@ -320,7 +309,7 @@ export default function SignDocument({
 
           if (!user?.passwordHash || candidateHash !== user.passwordHash) {
             setPasswordModalError('Incorrect password. Access denied.')
-            setErrorMessage('Incorrect password. Access denied.')
+            toast.error('Incorrect password. Access denied.')
             return
           }
 

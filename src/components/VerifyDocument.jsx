@@ -5,6 +5,7 @@
 
 import { useState } from 'react'
 import { verifySignature } from '../utils/cryptoUtils'
+import { useToast } from '../hooks/useToast'
 
 const REQUIRED_FIELDS_MESSAGE = 'Please complete all required fields.'
 const VERIFICATION_FAILED_MESSAGE =
@@ -32,28 +33,6 @@ function validateDocumentFile(file) {
 }
 
 /**
- * A small status badge for scenario messages.
- * @param {{ statusMessage: string }} props
- */
-function VerificationBadge({ statusMessage }) {
-  if (!statusMessage) return null
-
-  const classes = statusMessage.startsWith('✅')
-    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-    : statusMessage.startsWith('⚠️')
-      ? 'border-amber-200 bg-amber-50 text-amber-800'
-      : 'border-red-200 bg-red-50 text-red-800'
-
-  return (
-    <div
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-sm font-medium ${classes}`}
-    >
-      {statusMessage}
-    </div>
-  )
-}
-
-/**
  * VerifyDocument component.
  * @param {{
  *   documentFile: File | null,
@@ -77,10 +56,9 @@ export default function VerifyDocument({
   timestamp,
   setTimestamp,
 }) {
+  const toast = useToast()
   const [isLoading, setIsLoading] = useState(false)
-  const [, setValid] = useState(/** @type {boolean | null} */ (null))
   const [serverHash, setServerHash] = useState('')
-  const [statusMessage, setStatusMessage] = useState('')
   const [documentFileError, setDocumentFileError] = useState('')
 
   function normalizeText(value) {
@@ -92,12 +70,10 @@ export default function VerifyDocument({
    * Critical flow: if the document changes, its hash changes; the signature will no longer match.
    */
   async function handleVerify() {
-    setStatusMessage('')
-    setValid(null)
     setServerHash('')
 
     if (documentFileError) {
-      setStatusMessage(documentFileError)
+      toast.error(documentFileError)
       return
     }
 
@@ -107,7 +83,7 @@ export default function VerifyDocument({
     const hasPublicKey = Boolean(normalizeText(publicKey))
     const hasTimestamp = Boolean(normalizeText(timestamp))
     if (!hasDocument || !hasSignature || !hasPublicKey || !hasTimestamp) {
-      setStatusMessage(REQUIRED_FIELDS_MESSAGE)
+      toast.error(REQUIRED_FIELDS_MESSAGE)
       return
     }
     setIsLoading(true)
@@ -117,27 +93,25 @@ export default function VerifyDocument({
 
       const isValid = Boolean(data?.isValid)
       const returnedHash = data?.hash || ''
-      setValid(isValid)
       setServerHash(returnedHash)
 
       if (isValid) {
-        setStatusMessage('✅ Signature is valid! The document and timestamp are authentic and have not been altered.')
+        toast.success('Signature is valid. The document and timestamp have not been altered.')
         return
       }
 
       // Any invalid result is a verification failure per requirements.
-      setStatusMessage(VERIFICATION_FAILED_MESSAGE)
+      toast.error(VERIFICATION_FAILED_MESSAGE)
     } catch (err) {
-      setValid(null)
       setServerHash('')
 
       const message = typeof err?.message === 'string' ? err.message.trim() : ''
       if (message === REQUIRED_FIELDS_MESSAGE) {
-        setStatusMessage(REQUIRED_FIELDS_MESSAGE)
+        toast.error(REQUIRED_FIELDS_MESSAGE)
         return
       }
 
-      setStatusMessage(VERIFICATION_FAILED_MESSAGE)
+      toast.error(VERIFICATION_FAILED_MESSAGE)
     } finally {
       setIsLoading(false)
     }
@@ -160,8 +134,6 @@ export default function VerifyDocument({
               className="sr-only"
               onChange={(e) => {
                 const nextFile = e.target.files?.[0] || null
-                setStatusMessage('')
-                setValid(null)
                 setServerHash('')
 
                 if (!nextFile) {
@@ -240,8 +212,6 @@ export default function VerifyDocument({
           >
             {isLoading ? 'Verifying…' : 'Verify'}
           </button>
-
-          <VerificationBadge statusMessage={statusMessage} />
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">

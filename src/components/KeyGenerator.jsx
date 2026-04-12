@@ -6,15 +6,19 @@
 import { useState } from 'react'
 import { generateKeys, hashPasswordMD5 } from '../utils/cryptoUtils'
 import { normalizeOwner, upsertUserKeys } from '../lib/userKeysStorage'
+import { useToast } from '../hooks/useToast'
 
 /**
  * Render a labeled read-only textarea used for PEM blocks.
- * @param {{ label: string, value: string }} props
+ * @param {{ label: string, value: string, rightAction?: import('react').ReactNode }} props
  */
-function PemField({ label, value }) {
+function PemField({ label, value, rightAction }) {
   return (
     <div className="space-y-2">
-      <label className="text-sm font-medium text-slate-700">{label}</label>
+      <div className="flex items-center justify-between gap-3">
+        <label className="text-sm font-medium text-slate-700">{label}</label>
+        {rightAction ? <div className="shrink-0">{rightAction}</div> : null}
+      </div>
       <textarea
         className="w-full min-h-28 rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs text-slate-900 whitespace-pre-wrap break-normal"
         value={value || ''}
@@ -36,27 +40,67 @@ function PemField({ label, value }) {
  */
 export default function KeyGenerator({ onUserKeysStored }) {
   const [isLoading, setIsLoading] = useState(false)
-  const [errorMessage, setErrorMessage] = useState('')
   const [userName, setUserName] = useState('')
   const [password, setPassword] = useState('')
   const [generatedPublicKey, setGeneratedPublicKey] = useState('')
   const [generatedPrivateKey, setGeneratedPrivateKey] = useState('')
+  const toast = useToast()
+
+  async function handleCopyPublicKey() {
+    const pemRaw = String(generatedPublicKey || '')
+    const pemTrimmed = pemRaw.trim()
+
+    if (!pemTrimmed) {
+      toast.error('No public key to copy.')
+      return
+    }
+
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard API not available')
+      }
+
+      await navigator.clipboard.writeText(pemRaw)
+      toast.success('Public key copied to clipboard.')
+    } catch {
+      toast.error('Failed to copy public key.')
+    }
+  }
+
+  async function handleCopyPrivateKey() {
+    const pemRaw = String(generatedPrivateKey || '')
+    const pemTrimmed = pemRaw.trim()
+
+    if (!pemTrimmed) {
+      toast.error('No private key to copy.')
+      return
+    }
+
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard API not available')
+      }
+
+      await navigator.clipboard.writeText(pemRaw)
+      toast.success('Private key copied to clipboard.')
+    } catch {
+      toast.error('Failed to copy private key.')
+    }
+  }
 
   /**
    * Generate a keypair locally.
    * Inline critical flow: these keys are used for signing (private) and verifying (public).
    */
   async function handleGenerateKeys() {
-    setErrorMessage('')
-
     const owner = normalizeOwner(userName)
     if (!owner) {
-      setErrorMessage('Please complete all required fields.')
+      toast.error('Please complete all required fields.')
       return
     }
 
     if (!String(password || '').trim()) {
-      setErrorMessage('Please complete all required fields.')
+      toast.error('Please complete all required fields.')
       return
     }
 
@@ -77,12 +121,13 @@ export default function KeyGenerator({ onUserKeysStored }) {
         // Persist the user keys (and password hash) to localStorage via the shared storage API.
         upsertUserKeys({ owner, publicKey: nextPublicKey, privateKey: nextPrivateKey, passwordHash })
         onUserKeysStored?.()
+        toast.success('Keys generated and stored locally.')
       } catch {
-        setErrorMessage('Generated keys, but failed to store them locally.')
+        toast.error('Generated keys, but failed to store them locally.')
       }
     } catch (err) {
       const message = typeof err?.message === 'string' ? err.message.trim() : ''
-      setErrorMessage(message || 'Something went wrong. Please try again.')
+      toast.error(message || 'Something went wrong. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -107,7 +152,6 @@ export default function KeyGenerator({ onUserKeysStored }) {
             value={userName}
             onChange={(e) => {
               setUserName(e.target.value)
-              if (errorMessage) setErrorMessage('')
             }}
             placeholder="Enter a name"
             autoComplete="name"
@@ -126,7 +170,6 @@ export default function KeyGenerator({ onUserKeysStored }) {
             value={password}
             onChange={(e) => {
               setPassword(e.target.value)
-              if (errorMessage) setErrorMessage('')
             }}
             placeholder="Enter a password"
             autoComplete="new-password"
@@ -143,18 +186,38 @@ export default function KeyGenerator({ onUserKeysStored }) {
           >
             {isLoading ? 'Generating…' : 'Generate Keys'}
           </button>
-
-          {errorMessage ? (
-            <p className="text-sm text-red-700">{errorMessage}</p>
-          ) : (
-            <p className="text-sm text-slate-500"></p>
-          )}
         </div>
       </div>
 
       <div className="mt-5 grid grid-cols-1 gap-4">
-        <PemField label="Public Key (PEM)" value={generatedPublicKey} />
-        <PemField label="Private Key (PEM)" value={generatedPrivateKey} />
+        <PemField
+          label="Public Key (PEM)"
+          value={generatedPublicKey}
+          rightAction={
+            <button
+              type="button"
+              onClick={handleCopyPublicKey}
+              disabled={!String(generatedPublicKey || '').trim()}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Copy
+            </button>
+          }
+        />
+        <PemField
+          label="Private Key (PEM)"
+          value={generatedPrivateKey}
+          rightAction={
+            <button
+              type="button"
+              onClick={handleCopyPrivateKey}
+              disabled={!String(generatedPrivateKey || '').trim()}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+            >
+              Copy
+            </button>
+          }
+        />
       </div>
     </section>
   )
