@@ -5,6 +5,7 @@
 
 import { useState } from 'react'
 import { extractApiErrorMessage, generateKeys } from '../lib/api'
+import { hashPassword } from '../lib/hash'
 import { normalizeOwner, upsertUserKeys } from '../lib/userKeysStorage'
 
 /**
@@ -38,6 +39,7 @@ export default function KeyGenerator({ onUserKeysStored }) {
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [userName, setUserName] = useState('')
+  const [password, setPassword] = useState('')
   const [generatedPublicKey, setGeneratedPublicKey] = useState('')
   const [generatedPrivateKey, setGeneratedPrivateKey] = useState('')
 
@@ -54,6 +56,11 @@ export default function KeyGenerator({ onUserKeysStored }) {
       return
     }
 
+    if (!String(password || '').trim()) {
+      setErrorMessage('Password is required to generate keys.')
+      return
+    }
+
     setIsLoading(true)
 
     try {
@@ -63,8 +70,13 @@ export default function KeyGenerator({ onUserKeysStored }) {
       setGeneratedPublicKey(nextPublicKey)
       setGeneratedPrivateKey(nextPrivateKey)
 
+      // Per project requirements, we hash the password client-side using MD5.
+      // IMPORTANT: never persist/store the raw password; only store this hash.
+      const passwordHash = hashPassword(password)
+
       try {
-        upsertUserKeys({ owner, publicKey: nextPublicKey, privateKey: nextPrivateKey })
+        // Persist the user keys (and password hash) to localStorage via the shared storage API.
+        upsertUserKeys({ owner, publicKey: nextPublicKey, privateKey: nextPrivateKey, passwordHash })
         onUserKeysStored?.()
       } catch {
         setErrorMessage('Generated keys, but failed to store them locally.')
@@ -103,12 +115,31 @@ export default function KeyGenerator({ onUserKeysStored }) {
           <p className="text-sm text-slate-500">Used to save this keypair in localStorage.</p>
         </div>
 
+        <div className="space-y-2">
+          <label htmlFor="keygen-password" className="text-sm font-medium text-slate-700">
+            Password
+          </label>
+          <input
+            id="keygen-password"
+            type="password"
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              if (errorMessage) setErrorMessage('')
+            }}
+            placeholder="Enter a password"
+            autoComplete="new-password"
+          />
+          <p className="text-sm text-slate-500">Saved as an MD5 hash (never stored as plain text).</p>
+        </div>
+
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={handleGenerateKeys}
             disabled={isLoading}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
           >
             {isLoading ? 'Generating…' : 'Generate Keys'}
           </button>

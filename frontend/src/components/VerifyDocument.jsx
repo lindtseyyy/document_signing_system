@@ -283,7 +283,7 @@ export default function VerifyDocument({
             type="button"
             onClick={handleVerify}
             disabled={isLoading}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
           >
             {isLoading ? 'Verifying…' : 'Verify'}
           </button>

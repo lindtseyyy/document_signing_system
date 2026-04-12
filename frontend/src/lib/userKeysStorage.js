@@ -1,15 +1,27 @@
 /**
  * localStorage-backed storage for per-user DSA keypairs.
  *
- * Storage format (v1):
- * { version: 1, users: Array<{ owner: string, publicKey: string, privateKey: string, createdAt: string }> }
+ * Storage format (current):
+ * Root JSON array of user objects:
+ *   [{ owner, publicKey, privateKey, passwordHash }]
+ *
+ * Backward compatibility:
+ * - v1 versioned object: { version: 1, users: [...] }
+ * - legacy root array entries that may not include passwordHash
+ *
+ * Migration behavior:
+ * - When reading old formats, we migrate in-memory and rewrite localStorage to the
+ *   new root-array format on the next write (and also immediately on load when safe).
  */
+
+import { md5Hex } from './hash'
 
 const STORAGE_KEY = 'dss.userKeys'
 const STORAGE_VERSION = 1
 
 /**
- * @typedef {{ owner: string, publicKey: string, privateKey: string, createdAt: string }} StoredUserKeys
+ * Current stored user shape.
+ * @typedef {{ owner: string, publicKey: string, privateKey: string, passwordHash: string }} StoredUserKeys
  */
 
 function isBrowser() {
@@ -17,19 +29,25 @@ function isBrowser() {
 }
 
 /**
+ * Coerce unknown values into the current stored user format.
+ *
+ * This accepts legacy shapes (e.g., entries with `createdAt` and no `passwordHash`).
+ * Any missing `passwordHash` is migrated to an empty string.
+ *
  * @param {unknown} value
- * @returns {value is StoredUserKeys}
+ * @returns {StoredUserKeys | null}
  */
-function isStoredUserKeys(value) {
+function coerceStoredUserKeys(value) {
   const v = /** @type {any} */ (value)
-  return (
-    v &&
-    typeof v === 'object' &&
-    typeof v.owner === 'string' &&
-    typeof v.publicKey === 'string' &&
-    typeof v.privateKey === 'string' &&
-    typeof v.createdAt === 'string'
-  )
+  const owner = normalizeOwner(v?.owner)
+  if (!owner) return null
+
+  return {
+    owner,
+    publicKey: String(v?.publicKey || ''),
+    privateKey: String(v?.privateKey || ''),
+    passwordHash: typeof v?.passwordHash === 'string' ? v.passwordHash : '',
+  }
 }
 
 /**
@@ -39,10 +57,9 @@ function isStoredUserKeys(value) {
 function dedupeAndSortUsers(users) {
   const byOwner = new Map()
   for (const user of users || []) {
-    if (!isStoredUserKeys(user)) continue
-    const owner = normalizeOwner(user.owner)
-    if (!owner) continue
-    byOwner.set(owner, { ...user, owner })
+    const coerced = coerceStoredUserKeys(user)
+    if (!coerced) continue
+    byOwner.set(coerced.owner, coerced)
   }
 
   return Array.from(byOwner.values()).sort((a, b) => {
@@ -51,40 +68,55 @@ function dedupeAndSortUsers(users) {
 }
 
 /**
- * @returns {StoredUserKeys[]}
+ * Persist users in the new root-array format.
+ * @param {StoredUserKeys[]} users
  */
-export function loadUserKeys() {
-  if (!isBrowser()) return []
+function writeUsersArray(users) {
+  if (!isBrowser()) return
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(dedupeAndSortUsers(users)))
+}
+
+/**
+ * Read localStorage and return users in the new format.
+ * If old format is detected, the returned users are migrated and localStorage is rewritten.
+ *
+ * @returns {{ users: StoredUserKeys[], migrated: boolean }}
+ */
+function readAndMaybeMigrateUsers() {
+  if (!isBrowser()) return { users: [], migrated: false }
 
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
+    if (!raw) return { users: [], migrated: false }
 
     const parsed = JSON.parse(raw)
 
-    // Support legacy storage where the root was directly an array.
+    // Current (and legacy) format: root array.
     if (Array.isArray(parsed)) {
-      return dedupeAndSortUsers(
-        parsed.map((u) => {
-          const v = /** @type {any} */ (u)
-          return {
-            owner: String(v?.owner || ''),
-            publicKey: String(v?.publicKey || ''),
-            privateKey: String(v?.privateKey || ''),
-            createdAt: String(v?.createdAt || new Date().toISOString()),
-          }
-        })
-      )
+      const users = dedupeAndSortUsers(parsed)
+      const migrated = parsed.some((u) => typeof /** @type {any} */ (u)?.passwordHash !== 'string')
+      if (migrated) writeUsersArray(users)
+      return { users, migrated }
     }
 
-    if (parsed?.version !== STORAGE_VERSION || !Array.isArray(parsed?.users)) {
-      return []
+    // Backward compatible v1 versioned object.
+    if (parsed?.version === STORAGE_VERSION && Array.isArray(parsed?.users)) {
+      const users = dedupeAndSortUsers(parsed.users)
+      writeUsersArray(users)
+      return { users, migrated: true }
     }
 
-    return dedupeAndSortUsers(parsed.users)
+    return { users: [], migrated: false }
   } catch {
-    return []
+    return { users: [], migrated: false }
   }
+}
+
+/**
+ * @returns {StoredUserKeys[]}
+ */
+export function loadUserKeys() {
+  return readAndMaybeMigrateUsers().users
 }
 
 /**
@@ -93,9 +125,8 @@ export function loadUserKeys() {
 export function saveUserKeys(users) {
   if (!isBrowser()) return
 
-  const nextUsers = dedupeAndSortUsers(users)
-  const payload = { version: STORAGE_VERSION, users: nextUsers }
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
+  // Always write the new root-array format.
+  writeUsersArray(dedupeAndSortUsers(users))
 }
 
 /**
@@ -108,7 +139,11 @@ export function normalizeOwner(owner) {
 
 /**
  * Add or replace a user's keys.
- * @param {{ owner: string, publicKey: string, privateKey: string }} input
+ *
+ * IMPORTANT: Never store raw passwords. Pass in `passwordHash` (MD5 hex) instead.
+ * If `passwordHash` is omitted and the user already exists, the existing hash is kept.
+ *
+ * @param {{ owner: string, publicKey: string, privateKey: string, passwordHash?: string }} input
  * @returns {StoredUserKeys[]}
  */
 export function upsertUserKeys(input) {
@@ -116,10 +151,18 @@ export function upsertUserKeys(input) {
   if (!owner) return loadUserKeys()
 
   const users = loadUserKeys()
-  const createdAt = new Date().toISOString()
+
+  const existing = users.find((u) => normalizeOwner(u.owner) === owner) || null
+  const nextPasswordHash =
+    typeof input?.passwordHash === 'string' ? input.passwordHash : String(existing?.passwordHash || '')
 
   const next = users.filter((u) => normalizeOwner(u.owner) !== owner)
-  next.push({ owner, publicKey: String(input?.publicKey || ''), privateKey: String(input?.privateKey || ''), createdAt })
+  next.push({
+    owner,
+    publicKey: String(input?.publicKey || ''),
+    privateKey: String(input?.privateKey || ''),
+    passwordHash: nextPasswordHash,
+  })
 
   const normalized = dedupeAndSortUsers(next)
   saveUserKeys(normalized)
@@ -137,4 +180,27 @@ export function deleteUserKeys(owner) {
   const next = users.filter((u) => normalizeOwner(u.owner) !== normalizedOwner)
   saveUserKeys(next)
   return next
+}
+
+/**
+ * Verify a user's password against the stored MD5 hash.
+ *
+ * Password verification logic:
+ * - Compute `md5Hex(password)` and compare to stored `passwordHash`.
+ * - We never store or return raw passwords.
+ *
+ * @param {string} owner
+ * @param {string} password
+ * @returns {boolean}
+ */
+export function verifyUserPassword(owner, password) {
+  const normalizedOwner = normalizeOwner(owner)
+  if (!normalizedOwner) return false
+
+  const users = loadUserKeys()
+  const user = users.find((u) => normalizeOwner(u.owner) === normalizedOwner)
+  if (!user?.passwordHash) return false
+
+  const candidateHash = md5Hex(String(password ?? ''))
+  return candidateHash === user.passwordHash
 }

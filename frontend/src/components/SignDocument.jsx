@@ -5,6 +5,8 @@
 
 import { useState } from 'react'
 import { extractApiErrorMessage, signDocument } from '../lib/api'
+import PasswordModal from './PasswordModal.jsx'
+import { loadUserKeys, verifyUserPassword } from '../lib/userKeysStorage'
 
 const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 const DOCUMENT_ACCEPT =
@@ -75,6 +77,41 @@ export default function SignDocument({
   const [errorMessage, setErrorMessage] = useState('')
   const [documentFileError, setDocumentFileError] = useState('')
 
+  // Phase 4.1: Password verification gate
+  // Before we allow the signing action to execute, we require the user to authenticate
+  // as the owner of the selected/stored keypair. This prevents signing with a private key
+  // without confirming the owner's password.
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
+  const [passwordModalError, setPasswordModalError] = useState('')
+  const [pendingOwner, setPendingOwner] = useState('')
+
+  function normalizePemForMatch(pem) {
+    return String(pem || '')
+      .trim()
+      .replace(/\r\n/g, '\n')
+  }
+
+  /**
+   * Best-effort owner detection:
+   * - Prefer matching private key PEM (signing uses private key).
+   * - Fall back to public key match when available.
+   */
+  function inferSigningOwner() {
+    const storedUsers = loadUserKeys()
+    const normalizedPrivate = normalizePemForMatch(privateKey)
+    const normalizedPublic = normalizePemForMatch(publicKey)
+
+    if (!storedUsers.length) return ''
+
+    const byPrivate = storedUsers.find((u) => normalizePemForMatch(u?.privateKey) === normalizedPrivate)
+    if (byPrivate?.owner) return String(byPrivate.owner)
+
+    const byPublic = storedUsers.find((u) => normalizePemForMatch(u?.publicKey) === normalizedPublic)
+    if (byPublic?.owner) return String(byPublic.owner)
+
+    return ''
+  }
+
   /**
    * Call backend to sign the document using the private key.
    * Critical flow: backend hashes the document, then signs that hash with the private key.
@@ -125,6 +162,26 @@ export default function SignDocument({
     } finally {
       setIsLoading(false)
     }
+  }
+
+  /**
+   * Password-gated click handler:
+   * - Shows PasswordModal first.
+   * - Only after successful password verification do we call the existing signing logic.
+   */
+  function handleSignClick() {
+    setErrorMessage('')
+    setPasswordModalError('')
+
+    const owner = inferSigningOwner()
+    if (!owner) {
+      // Without a determinable owner, we cannot authenticate; block signing.
+      setErrorMessage('Authentication required before signing.')
+      return
+    }
+
+    setPendingOwner(owner)
+    setIsPasswordModalOpen(true)
   }
 
   return (
@@ -199,9 +256,9 @@ export default function SignDocument({
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={handleSign}
+            onClick={handleSignClick}
             disabled={isLoading}
-            className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+            className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
           >
             {isLoading ? 'Signing…' : 'Sign'}
           </button>
@@ -242,6 +299,36 @@ export default function SignDocument({
           </div>
         </div>
       </div>
+
+      <PasswordModal
+        isOpen={isPasswordModalOpen}
+        title="Confirm password"
+        bodyText={pendingOwner ? `Enter the password for “${pendingOwner}” to sign.` : undefined}
+        error={passwordModalError}
+        isSubmitting={false}
+        onCancel={() => {
+          // If the user cancels/closes without successful authentication, signing is blocked.
+          setIsPasswordModalOpen(false)
+          setPendingOwner('')
+          setPasswordModalError('')
+          setErrorMessage('Authentication required before signing.')
+        }}
+        onConfirm={(password) => {
+          const ok = verifyUserPassword(pendingOwner, password)
+          if (!ok) {
+            setPasswordModalError('Incorrect password. Access denied.')
+            setErrorMessage('Incorrect password. Access denied.')
+            return
+          }
+
+          setIsPasswordModalOpen(false)
+          setPendingOwner('')
+          setPasswordModalError('')
+
+          // Auth succeeded: proceed with the existing signing logic unchanged.
+          void handleSign()
+        }}
+      />
     </section>
   )
 }
