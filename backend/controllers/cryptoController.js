@@ -40,8 +40,8 @@ async function sign(req, res) {
 /**
  * Handles POST /api/verify.
  * Accepts either:
- * - JSON body: { document: string, signature: string (base64), publicKey: string (PEM) }
- * - multipart/form-data: document (file) + signature (text) + publicKey (text)
+ * - JSON body: { document: string, signature: string (base64), publicKey: string (PEM), timestamp: string (RFC3339 / ISO 8601) }
+ * - multipart/form-data: document (file) + signature (text) + publicKey (text) + timestamp (text)
  * @param {import("express").Request} req Express request.
  * @param {import("express").Response} res Express response.
  * @returns {Promise<void>} Resolves when response is sent.
@@ -50,11 +50,13 @@ async function verify(req, res) {
   const document = req.file?.buffer ?? req.body?.document;
   const signature = req.body?.signature;
   const publicKey = req.body?.publicKey;
+  const timestamp = req.body?.timestamp;
 
   const result = await cryptoService.verifySignature({
     document,
     signature,
-    publicKey
+    publicKey,
+    timestamp
   });
   res.json(result);
 }

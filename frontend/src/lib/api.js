@@ -82,7 +82,7 @@ export async function generateKeys() {
  * Supports both legacy JSON (document as string) and multipart upload (document as File).
  * When a File is provided, sends multipart FormData with field name `document`.
  * @param {{ document: any, privateKey: string }} payload
- * @returns {Promise<{ signature: string, hash: string }>}
+ * @returns {Promise<{ signature: string, hash: string, timestamp: string | number }>}
  */
 export async function signDocument(payload) {
   const maybeDocument = payload?.document
@@ -106,8 +106,8 @@ export async function signDocument(payload) {
  * POST /api/verify
  * Supports both legacy JSON (document as string) and multipart upload (document as File).
  * When a File is provided, sends multipart FormData with field name `document`.
- * @param {{ document: any, signature: string, publicKey: string }} payload
- * @returns {Promise<{ isValid: boolean, hash: string }>}
+ * @param {{ document: any, signature: string, publicKey: string, timestamp: string | number }} payload
+ * @returns {Promise<{ isValid: boolean, hash: string, timestamp?: string | number }>}
  */
 export async function verifyDocument(payload) {
   const maybeDocument = payload?.document
@@ -118,14 +118,15 @@ export async function verifyDocument(payload) {
     form.append('document', maybeDocument)
     form.append('signature', payload.signature)
     form.append('publicKey', payload.publicKey)
+    form.append('timestamp', String(payload.timestamp ?? ''))
 
     // IMPORTANT: use axios directly (not `api`) and do NOT set Content-Type manually.
     const res = await axios.post('/api/verify', form, { timeout: 30_000 })
-    const { isValid, hash } = res.data || {}
-    return { isValid, hash }
+    const { isValid, hash, timestamp } = res.data || {}
+    return { isValid, hash, timestamp }
   }
 
   const res = await api.post('/api/verify', payload)
-  const { isValid, hash } = res.data || {}
-  return { isValid, hash }
+  const { isValid, hash, timestamp } = res.data || {}
+  return { isValid, hash, timestamp }
 }

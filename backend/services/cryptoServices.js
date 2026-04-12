@@ -5,7 +5,7 @@
  * Requirements implemented:
  * - DSA key generation via crypto.generateKeyPair('dsa')
  * - Signing/verifying via crypto.sign / crypto.verify
- * - SHA-256 hashing (hex) returned alongside signature/verification
+ * - Deterministic timestamped payload encoding + MD5 hashing (hex) returned alongside signature/verification
  * - No persistence (no DB, no filesystem)
  */
 
@@ -75,13 +75,146 @@ function requireDocumentBytes(value) {
 }
 
 /**
- * Computes SHA-256 hash for raw bytes.
- * @param {Buffer} bytes Document bytes.
- * @returns {string} Hex-encoded SHA-256 hash.
+ * Computes MD5 hash for raw bytes.
+ * @param {Buffer} bytes Bytes to hash.
+ * @returns {string} Hex-encoded MD5 hash.
  */
-function sha256HexFromBytes(bytes) {
+function md5HexFromBytes(bytes) {
   // Critical logic: hashing must be done on the exact bytes signed/verified.
-  return crypto.createHash("sha256").update(bytes).digest("hex");
+  return crypto.createHash("md5").update(bytes).digest("hex");
+}
+
+/**
+ * Computes MD5 digest bytes for raw bytes.
+ * @param {Buffer} bytes Bytes to hash.
+ * @returns {Buffer} 16-byte MD5 digest.
+ */
+function md5DigestFromBytes(bytes) {
+  return crypto.createHash("md5").update(bytes).digest();
+}
+
+/**
+ * Builds deterministic, binary-safe payload bytes for signing/verifying.
+ * Format: magic 'DSSv1' + 0x00 + tsLen UInt32BE + tsBytes + docLen UInt32BE + docBytes
+ * @param {string} timestamp ISO timestamp string.
+ * @param {Buffer} documentBytes Document bytes.
+ * @returns {Buffer} Payload bytes.
+ */
+function buildTimestampedPayloadBytes(timestamp, documentBytes) {
+  const tsBytes = Buffer.from(timestamp, "utf8");
+  const tsLenBuf = Buffer.alloc(4);
+  tsLenBuf.writeUInt32BE(tsBytes.length, 0);
+
+  const docLenBuf = Buffer.alloc(4);
+  docLenBuf.writeUInt32BE(documentBytes.length, 0);
+
+  const magic = Buffer.from("DSSv1", "ascii");
+  const zero = Buffer.from([0x00]);
+
+  return Buffer.concat([magic, zero, tsLenBuf, tsBytes, docLenBuf, documentBytes]);
+}
+
+/**
+ * Returns an RFC3339/ISO-8601 timestamp string in Philippines time (UTC+08:00).
+ * Deterministic implementation with a fixed offset (PH has no DST).
+ *
+ * Format: YYYY-MM-DDTHH:mm:ss.SSS+08:00
+ * Example: 2026-04-12T13:55:34.181+08:00
+ *
+ * @param {Date} [date] Base date/time (defaults to now).
+ * @returns {string}
+ */
+function philippinesTimestamp(date = new Date()) {
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const pad3 = (n) => String(n).padStart(3, "0");
+
+  const offsetMinutes = 8 * 60;
+  const offsetMs = offsetMinutes * 60 * 1000;
+
+  // Shift the instant forward by +08:00, then format using UTC getters.
+  // This avoids dependence on the server's local timezone.
+  const shifted = new Date(date.getTime() + offsetMs);
+
+  const year = shifted.getUTCFullYear();
+  const month = pad2(shifted.getUTCMonth() + 1);
+  const day = pad2(shifted.getUTCDate());
+  const hours = pad2(shifted.getUTCHours());
+  const minutes = pad2(shifted.getUTCMinutes());
+  const seconds = pad2(shifted.getUTCSeconds());
+  const millis = pad3(shifted.getUTCMilliseconds());
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${millis}+08:00`;
+}
+
+/**
+ * Validates and parses a timestamp string.
+ * - Required to be a non-empty string
+ * - Must be parseable as a Date
+ * - Recommended to be strict ISO 8601 / RFC3339 with an explicit offset
+ * @param {any} value Timestamp to validate.
+ * @returns {{ timestamp: string, date: Date }}
+ */
+function requireTimestamp(value) {
+  const timestamp = requireString(value, "timestamp", { allowEmpty: false });
+
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    throw new ApiError(400, "Bad Request", {
+      field: "timestamp",
+      issue: "must be a parseable date string",
+      recommendation: "use ISO 8601 / RFC3339, e.g. 2026-04-12T18:20:30.000+08:00"
+    });
+  }
+
+  // Recommended (not enforced): strict ISO 8601 / RFC3339 timestamps.
+  // Example: 2026-04-12T18:20:30.000+08:00
+
+  return { timestamp, date };
+}
+
+/**
+ * Optional replay/freshness guard.
+ * Enabled only when ENFORCE_TIMESTAMP_FRESHNESS==='true'.
+ *
+ * Defaults:
+ * - MAX_SIGNATURE_AGE_MS: 5 minutes
+ * - MAX_FUTURE_SKEW_MS: 2 minutes
+ *
+ * @param {Date} timestampDate Parsed timestamp date.
+ */
+function maybeEnforceTimestampFreshness(timestampDate) {
+  if (process.env.ENFORCE_TIMESTAMP_FRESHNESS !== "true") return;
+
+  const maxAgeMsRaw = process.env.MAX_SIGNATURE_AGE_MS;
+  const maxFutureSkewMsRaw = process.env.MAX_FUTURE_SKEW_MS;
+
+  const maxAgeMsParsed = Number(maxAgeMsRaw);
+  const maxFutureSkewMsParsed = Number(maxFutureSkewMsRaw);
+
+  const maxAgeMs = Number.isFinite(maxAgeMsParsed) && maxAgeMsParsed > 0 ? maxAgeMsParsed : 5 * 60 * 1000;
+  const maxFutureSkewMs =
+    Number.isFinite(maxFutureSkewMsParsed) && maxFutureSkewMsParsed >= 0
+      ? maxFutureSkewMsParsed
+      : 2 * 60 * 1000;
+
+  const nowMs = Date.now();
+  const tsMs = timestampDate.getTime();
+
+  if (tsMs - nowMs > maxFutureSkewMs) {
+    throw new ApiError(400, "Bad Request", {
+      field: "timestamp",
+      issue: "is too far in the future",
+      maxFutureSkewMs
+    });
+  }
+
+  if (nowMs - tsMs > maxAgeMs) {
+    throw new ApiError(400, "Bad Request", {
+      field: "timestamp",
+      issue: "is too old",
+      maxAgeMs
+    });
+  }
 }
 
 /**
@@ -299,7 +432,7 @@ async function generateKeys() {
 /**
  * Signs a document using a PEM private key.
  * @param {{document: any, privateKey: any}} input Input values (validated internally).
- * @returns {Promise<{signature: string, hash: string}>} Signature (base64) and document hash (hex).
+ * @returns {Promise<{signature: string, hash: string, timestamp: string}>} Signature (base64), payload hash (hex), and timestamp.
  * @throws {ApiError} If validation fails or signing fails.
  */
 async function signDocument(input) {
@@ -335,16 +468,36 @@ async function signDocument(input) {
   const documentBytes = requireDocumentBytes(input?.document);
   const privateKeyObject = parsePrivateKey(input?.privateKey);
 
-  const hash = sha256HexFromBytes(documentBytes);
+  const timestamp = philippinesTimestamp();
+  const payloadBytes = buildTimestampedPayloadBytes(timestamp, documentBytes);
+  const hash = md5HexFromBytes(payloadBytes);
+  const md5DigestBytes = md5DigestFromBytes(payloadBytes);
 
   try {
-    // For DSA, the digest algorithm is SHA-256 per requirement.
-    // Node/OpenSSL will handle DSA signing for the given key.
-    const signature = crypto.sign("sha256", documentBytes, privateKeyObject);
+    // Prefer signing the 16-byte MD5 digest bytes directly.
+    // If the current Node/OpenSSL runtime doesn't support raw digest signing for DSA,
+    // fall back to having OpenSSL compute the MD5 digest from the payload bytes.
+    let signature;
+    try {
+      signature = crypto.sign(null, md5DigestBytes, privateKeyObject);
+    } catch (rawErr) {
+      const rawMsg = typeof rawErr?.message === "string" ? rawErr.message : "";
+      const looksLikeUnsupportedRawDigest =
+        rawErr instanceof TypeError ||
+        rawMsg.toLowerCase().includes("digest") ||
+        rawMsg.toLowerCase().includes("algorithm") ||
+        rawMsg.toLowerCase().includes("unknown") ||
+        rawMsg.toLowerCase().includes("unsupported");
+
+      if (!looksLikeUnsupportedRawDigest) throw rawErr;
+
+      signature = crypto.sign("md5", payloadBytes, privateKeyObject);
+    }
 
     return {
       signature: signature.toString("base64"),
-      hash
+      hash,
+      timestamp
     };
   } catch (err) {
     throw new ApiError(400, "Bad Request", {
@@ -356,8 +509,8 @@ async function signDocument(input) {
 
 /**
  * Verifies a signature against a document using a PEM public key.
- * @param {{document: any, signature: any, publicKey: any}} input Input values (validated internally).
- * @returns {Promise<{isValid: boolean, hash: string}>} Verification result and document hash (hex).
+ * @param {{document: any, signature: any, publicKey: any, timestamp: any}} input Input values (validated internally).
+ * @returns {Promise<{isValid: boolean, hash: string, timestamp: string}>} Verification result and document hash (hex).
  * @throws {ApiError} If validation fails or verification fails unexpectedly.
  */
 async function verifySignature(input) {
@@ -391,15 +544,26 @@ async function verifySignature(input) {
     missing.push("publicKey");
   }
 
+  const timestampValue = input?.timestamp;
+  if (
+    typeof timestampValue === "undefined" ||
+    timestampValue === null ||
+    (typeof timestampValue === "string" && timestampValue.trim().length === 0)
+  ) {
+    missing.push("timestamp");
+  }
+
   if (missing.length > 0) {
     throw new ApiError(
       400,
-      "⚠️ Missing information! Please make sure the document, signature, and public key are all provided.",
+      "⚠️ Missing information! Please make sure the document, signature, public key, and timestamp are all provided.",
       { missing }
     );
   }
 
   const documentBytes = requireDocumentBytes(input?.document);
+  const { timestamp, date: timestampDate } = requireTimestamp(input?.timestamp);
+  maybeEnforceTimestampFreshness(timestampDate);
 
   let signatureBase64;
   try {
@@ -426,15 +590,32 @@ async function verifySignature(input) {
 
   const publicKeyObject = parsePublicKey(input?.publicKey);
 
-  const hash = sha256HexFromBytes(documentBytes);
+  const payloadBytes = buildTimestampedPayloadBytes(timestamp, documentBytes);
+  const hash = md5HexFromBytes(payloadBytes);
+  const md5DigestBytes = md5DigestFromBytes(payloadBytes);
 
   try {
     const signature = Buffer.from(signatureBase64, "base64");
 
-    // Critical logic: algorithm and encoding must match signing.
-    const isValid = crypto.verify("sha256", documentBytes, publicKeyObject, signature);
+    // Critical logic: algorithm and bytes must match signing.
+    let isValid;
+    try {
+      isValid = crypto.verify(null, md5DigestBytes, publicKeyObject, signature);
+    } catch (rawErr) {
+      const rawMsg = typeof rawErr?.message === "string" ? rawErr.message : "";
+      const looksLikeUnsupportedRawDigest =
+        rawErr instanceof TypeError ||
+        rawMsg.toLowerCase().includes("digest") ||
+        rawMsg.toLowerCase().includes("algorithm") ||
+        rawMsg.toLowerCase().includes("unknown") ||
+        rawMsg.toLowerCase().includes("unsupported");
 
-    return { isValid, hash };
+      if (!looksLikeUnsupportedRawDigest) throw rawErr;
+
+      isValid = crypto.verify("md5", payloadBytes, publicKeyObject, signature);
+    }
+
+    return { isValid, hash, timestamp };
   } catch (err) {
     // Nice-to-have: if OpenSSL throws due to a key-type mismatch, surface a clearer error.
     // (Non-matching signatures should still return isValid=false, not throw.)

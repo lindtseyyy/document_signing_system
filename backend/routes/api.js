@@ -79,10 +79,10 @@ function maybeUploadSingle(fieldName) {
 // POST /api/generate-keys -> returns { publicKey: PEM, privateKey: PEM }
 router.post("/generate-keys", wrapAsync(cryptoController.generateKeys));
 
-// POST /api/sign (multipart) fields: document(file), privateKey(PEM) -> returns { signature: base64, hash: hex }
+// POST /api/sign (multipart) fields: document(file), privateKey(PEM) -> returns { signature: base64, hash: hex, timestamp: RFC3339 string (+08:00) }
 router.post("/sign", maybeUploadSingle("document"), wrapAsync(cryptoController.sign));
 
-// POST /api/verify (multipart) fields: document(file), signature(base64), publicKey(PEM) -> returns { isValid: boolean, hash: hex }
+// POST /api/verify (multipart) fields: document(file), signature(base64), publicKey(PEM), timestamp(RFC3339 string) -> returns { isValid: boolean, hash: hex, timestamp: RFC3339 string }
 router.post("/verify", maybeUploadSingle("document"), wrapAsync(cryptoController.verify));
 
 module.exports = router;

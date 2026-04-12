@@ -1,6 +1,11 @@
 /**
- * Client-side hashing helpers.
- * Uses Web Crypto API to compute SHA-256 so the UI can visualize integrity.
+ * Client-side hashing helpers (legacy).
+ *
+ * Note: the signing/verifying scheme in this repo is performed on the backend over a
+ * deterministic, timestamped payload and uses an MD5 digest for the signed bytes.
+ *
+ * This SHA-256 helper is kept only as an optional/legacy UI aid and is not part of
+ * the signature verification contract.
  */
 
 /**

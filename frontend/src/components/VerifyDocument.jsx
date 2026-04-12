@@ -15,7 +15,7 @@ const SCENARIO_MESSAGES = {
   alteredSig:
     '❌ Invalid signature! The signature itself appears to have been altered. Verification failed.',
   missingInfo:
-    '⚠️ Missing information! Please make sure the document, signature, and public key are all provided.',
+    '⚠️ Missing information! Please make sure the document, signature, public key, and timestamp are all provided.',
 }
 
 const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
@@ -70,6 +70,8 @@ function VerificationBadge({ statusMessage }) {
  *   setSignature: (next: string) => void,
  *   publicKey: string,
  *   setPublicKey: (next: string) => void,
+ *   timestamp: string,
+ *   setTimestamp: (next: string) => void,
  *   signedHash: string,
  *   signedSignatureSnapshot: string,
  *   signedPublicKeySnapshot: string,
@@ -82,6 +84,9 @@ export default function VerifyDocument({
   setSignature,
   publicKey,
   setPublicKey,
+
+  timestamp,
+  setTimestamp,
 
   signedHash,
   signedSignatureSnapshot,
@@ -131,14 +136,15 @@ export default function VerifyDocument({
     const hasDocument = Boolean(documentFile)
     const hasSignature = Boolean(normalizeText(signature))
     const hasPublicKey = Boolean(normalizeText(publicKey))
-    if (!hasDocument || !hasSignature || !hasPublicKey) {
+    const hasTimestamp = Boolean(normalizeText(timestamp))
+    if (!hasDocument || !hasSignature || !hasPublicKey || !hasTimestamp) {
       setStatusMessage(SCENARIO_MESSAGES.missingInfo)
       return
     }
     setIsLoading(true)
 
     try {
-      const data = await verifyDocument({ document: documentFile, signature, publicKey })
+      const data = await verifyDocument({ document: documentFile, signature, publicKey, timestamp })
 
       const isValid = Boolean(data?.isValid)
       const returnedHash = data?.hash || ''
@@ -262,6 +268,16 @@ export default function VerifyDocument({
           />
         </div>
 
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-slate-700">Timestamp</label>
+          <input
+            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-900"
+            value={timestamp}
+            onChange={(e) => setTimestamp(e.target.value)}
+            placeholder="Paste the timestamp returned from the Sign step…"
+          />
+        </div>
+
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -279,6 +295,11 @@ export default function VerifyDocument({
           <p className="text-xs font-medium text-slate-700">Backend hash (hex)</p>
           <p className="mt-1 break-all font-mono text-xs text-slate-900">
             {serverHash || '—'}
+          </p>
+
+          <p className="mt-3 text-xs font-medium text-slate-700">Timestamp (sent)</p>
+          <p className="mt-1 break-all font-mono text-xs text-slate-900">
+            {normalizeText(timestamp) || '—'}
           </p>
           <p className="mt-2 text-xs text-slate-600">
             If you verify a different file than the one that was signed, the signature check will

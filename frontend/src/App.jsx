@@ -18,6 +18,7 @@ export default function App() {
   const [publicKey, setPublicKey] = useState('')
   const [privateKey, setPrivateKey] = useState('')
   const [signature, setSignature] = useState('')
+  const [timestamp, setTimestamp] = useState('')
 
   const [userKeysRevision, setUserKeysRevision] = useState(0)
 
@@ -36,52 +37,15 @@ export default function App() {
   const [activeSection, setActiveSection] = useState('keys')
 
   /**
-   * Compute the client-side SHA-256 whenever the document changes.
-   * Requirement: useEffect-based hashing with Web Crypto.
-   */
-  // useEffect(() => {
-  //   let isCancelled = false
-
-  //   async function computeHash() {
-  //     setHashError('')
-  //     try {
-  //       // Critical: any document edit changes this digest, which breaks signature verification.
-  //       const hex = await sha256Hex(document)
-  //       if (!isCancelled) setClientHash(hex)
-  //     } catch (err) {
-  //       const message = err instanceof Error ? err.message : 'Failed to compute hash.'
-  //       if (!isCancelled) {
-  //         setClientHash('')
-  //         setHashError(message)
-  //       }
-  //     }
-  //   }
-
-  //   computeHash()
-
-  //   return () => {
-  //     isCancelled = true
-  //   }
-  // }, [document])
-
-  /**
    * Capture the signing-time snapshots so Verify can classify mismatch scenarios.
-   * @param {{ hash: string, signatureSnapshot: string, publicKeySnapshot: string }} snapshot
+   * @param {{ hash: string, signatureSnapshot: string, publicKeySnapshot: string, timestamp: string | number }} snapshot
    */
   function handleSignedSnapshot(snapshot) {
     setSignedHash(snapshot.hash || '')
     setSignedSignatureSnapshot(snapshot.signatureSnapshot || '')
     setSignedPublicKeySnapshot(snapshot.publicKeySnapshot || '')
+    setTimestamp(snapshot.timestamp == null ? '' : String(snapshot.timestamp))
   }
-
-  /**
-   * A memoized status message for hashing so it doesn't flicker.
-   */
-  // const hashStatus = useMemo(() => {
-  //   if (hashError) return { kind: 'error', text: hashError }
-  //   if (!clientHash) return { kind: 'info', text: 'Computing SHA-256…' }
-  //   return { kind: 'ok', text: 'SHA-256 computed locally (client-side).' }
-  // }, [clientHash, hashError])
 
   return (
     <main className="min-h-screen bg-slate-50">
@@ -151,6 +115,9 @@ export default function App() {
               setSignature={setSignature}
               publicKey={publicKey}
               setPublicKey={setPublicKey}
+
+              timestamp={timestamp}
+              setTimestamp={setTimestamp}
 
               signedHash={signedHash}
               signedSignatureSnapshot={signedSignatureSnapshot}

@@ -35,7 +35,7 @@ function validateDocumentFile(file) {
  *   publicKey: string,
  *   privateKey: string,
  *   setPrivateKey: (next: string) => void,
- *   onSignedSnapshot: (snapshot: { hash: string, signatureSnapshot: string, publicKeySnapshot: string }) => void,
+ *   onSignedSnapshot: (snapshot: { hash: string, signatureSnapshot: string, publicKeySnapshot: string, timestamp: string | number }) => void,
  * }} props
  */
 export default function SignDocument({
@@ -49,6 +49,7 @@ export default function SignDocument({
   const [isLoading, setIsLoading] = useState(false)
   const [serverHash, setServerHash] = useState('')
   const [signedSignature, setSignedSignature] = useState('')
+  const [signedTimestamp, setSignedTimestamp] = useState('')
   const [errorMessage, setErrorMessage] = useState('')
   const [documentFileError, setDocumentFileError] = useState('')
 
@@ -76,13 +77,16 @@ export default function SignDocument({
       const data = await signDocument({ document: documentFile, privateKey })
       const nextSignature = data?.signature || ''
       const nextHash = data?.hash || ''
+      const nextTimestamp = data?.timestamp == null ? '' : String(data.timestamp)
       setSignedSignature(nextSignature)
       setServerHash(nextHash)
+      setSignedTimestamp(nextTimestamp)
 
       onSignedSnapshot({
         hash: nextHash,
         signatureSnapshot: nextSignature,
         publicKeySnapshot: publicKey || '',
+        timestamp: nextTimestamp,
       })
     } catch (err) {
       setErrorMessage(extractApiErrorMessage(err))
@@ -112,6 +116,7 @@ export default function SignDocument({
                 setErrorMessage('')
                 setServerHash('')
                 setSignedSignature('')
+                setSignedTimestamp('')
 
                 if (!nextFile) {
                   setDocumentFile(null)
@@ -194,6 +199,11 @@ export default function SignDocument({
             <p className="text-xs font-medium text-slate-700">Backend hash (hex)</p>
             <p className="mt-1 break-all font-mono text-xs text-slate-900">
               {serverHash || '—'}
+            </p>
+
+            <p className="mt-3 text-xs font-medium text-slate-700">Timestamp</p>
+            <p className="mt-1 break-all font-mono text-xs text-slate-900">
+              {signedTimestamp || '—'}
             </p>
           </div>
         </div>
