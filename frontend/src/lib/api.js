@@ -1,28 +1,27 @@
 /**
- * Shared Axios API client for calling the backend.
- * All endpoints are under /api/... and are proxied in dev via Vite.
+ * Local API compatibility layer.
+ *
+ * This repo previously called a backend via /api/*.
+ * Per requirements, the frontend now performs key generation, signing, and verification locally.
+ *
+ * We keep these exports for backward compatibility with any remaining imports,
+ * but there is no network usage here.
  */
 
-import axios from 'axios'
+import {
+  generateKeys as generateKeysLocal,
+  signDocument as signDocumentLocal,
+  verifySignature as verifySignatureLocal,
+} from '../utils/cryptoUtils'
 
 /**
- * Create a preconfigured Axios instance.
- * Keeping it centralized ensures consistent headers/timeouts and easier debugging.
+ * Deprecated placeholder client; calling this indicates a stray backend dependency.
  */
-function createApiClient() {
-  return axios.create({
-    baseURL: '',
-    timeout: 30_000,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  })
+export const api = {
+  post() {
+    throw new Error('Backend API calls are disabled in this build.')
+  },
 }
-
-/**
- * Singleton Axios client used across the app.
- */
-export const api = createApiClient()
 
 /**
  * Extract a beginner-friendly error message from an Axios error.
@@ -73,8 +72,7 @@ export function extractApiErrorMessage(err) {
  * @returns {Promise<{ publicKey: string, privateKey: string }>}
  */
 export async function generateKeys() {
-  const res = await api.post('/api/generate-keys')
-  return res.data
+  return generateKeysLocal()
 }
 
 /**
@@ -85,21 +83,7 @@ export async function generateKeys() {
  * @returns {Promise<{ signature: string, hash: string, timestamp: string | number }>}
  */
 export async function signDocument(payload) {
-  const maybeDocument = payload?.document
-  const isFile = typeof File !== 'undefined' && maybeDocument instanceof File
-
-  if (isFile) {
-    const form = new FormData()
-    form.append('document', maybeDocument)
-    form.append('privateKey', payload.privateKey)
-
-    // IMPORTANT: use axios directly (not `api`) and do NOT set Content-Type manually.
-    const res = await axios.post('/api/sign', form, { timeout: 30_000 })
-    return res.data
-  }
-
-  const res = await api.post('/api/sign', payload)
-  return res.data
+  return signDocumentLocal(payload)
 }
 
 /**
@@ -110,23 +94,12 @@ export async function signDocument(payload) {
  * @returns {Promise<{ isValid: boolean, hash: string, timestamp?: string | number }>}
  */
 export async function verifyDocument(payload) {
-  const maybeDocument = payload?.document
-  const isFile = typeof File !== 'undefined' && maybeDocument instanceof File
+  const { isValid, hash, timestamp } = await verifySignatureLocal({
+    document: payload?.document,
+    signature: payload?.signature,
+    publicKey: payload?.publicKey,
+    timestamp: String(payload?.timestamp ?? ''),
+  })
 
-  if (isFile) {
-    const form = new FormData()
-    form.append('document', maybeDocument)
-    form.append('signature', payload.signature)
-    form.append('publicKey', payload.publicKey)
-    form.append('timestamp', String(payload.timestamp ?? ''))
-
-    // IMPORTANT: use axios directly (not `api`) and do NOT set Content-Type manually.
-    const res = await axios.post('/api/verify', form, { timeout: 30_000 })
-    const { isValid, hash, timestamp } = res.data || {}
-    return { isValid, hash, timestamp }
-  }
-
-  const res = await api.post('/api/verify', payload)
-  const { isValid, hash, timestamp } = res.data || {}
   return { isValid, hash, timestamp }
 }

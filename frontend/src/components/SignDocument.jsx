@@ -1,19 +1,19 @@
 /**
  * SignDocument card.
- * Sends the document + private key to the backend to produce a signature and a hash.
+ * Signs the document locally using crypto utils (no backend calls).
  */
 
 import { useState } from 'react'
-import { extractApiErrorMessage, signDocument } from '../lib/api'
+import { hashPasswordMD5, signDocument as signDocumentLocal } from '../utils/cryptoUtils'
 import PasswordModal from './PasswordModal.jsx'
-import { loadUserKeys, verifyUserPassword } from '../lib/userKeysStorage'
+import { loadUserKeys } from '../lib/userKeysStorage'
 
 const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 const DOCUMENT_ACCEPT =
   '.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain'
 
 function validateDocumentFile(file) {
-  if (!file) return '⚠️ Missing information! Please make sure the document is provided.'
+  if (!file) return 'Please complete all required fields.'
   if (file.size > MAX_DOCUMENT_SIZE_BYTES) return 'File is too large. Max size is 10 MiB.'
 
   const name = (file.name || '').toLowerCase()
@@ -113,8 +113,8 @@ export default function SignDocument({
   }
 
   /**
-   * Call backend to sign the document using the private key.
-   * Critical flow: backend hashes the document, then signs that hash with the private key.
+    * Sign the document locally using the private key.
+    * Critical flow: the app hashes the document payload, then signs that hash with the private key.
    */
   async function handleSign() {
     setErrorMessage('')
@@ -127,23 +127,21 @@ export default function SignDocument({
     const isPrivateKeyMissing = !String(privateKey || '').trim()
 
     if (isDocumentMissing && isPrivateKeyMissing) {
-      setErrorMessage(
-        '⚠️ Missing information! Please make sure the document, and private key are all provided.'
-      )
+      setErrorMessage('Please complete all required fields.')
       return
     }
     if (isDocumentMissing) {
-      setErrorMessage('⚠️ Missing information! Please make sure the document is provided.')
+      setErrorMessage('Please complete all required fields.')
       return
     }
     if (isPrivateKeyMissing) {
-      setErrorMessage('⚠️ Missing information! Please make sure the private key is provided.')
+      setErrorMessage('Please complete all required fields.')
       return
     }
     setIsLoading(true)
 
     try {
-      const data = await signDocument({ document: documentFile, privateKey })
+      const data = await signDocumentLocal({ document: documentFile, privateKey })
       const nextSignature = data?.signature || ''
       const nextHash = data?.hash || ''
       const nextTimestamp = data?.timestamp == null ? '' : String(data.timestamp)
@@ -158,7 +156,8 @@ export default function SignDocument({
         timestamp: nextTimestamp,
       })
     } catch (err) {
-      setErrorMessage(extractApiErrorMessage(err))
+      const message = typeof err?.message === 'string' ? err.message.trim() : ''
+      setErrorMessage(message || 'Something went wrong. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -176,7 +175,7 @@ export default function SignDocument({
     const owner = inferSigningOwner()
     if (!owner) {
       // Without a determinable owner, we cannot authenticate; block signing.
-      setErrorMessage('Authentication required before signing.')
+      setErrorMessage('Please complete all required fields.')
       return
     }
 
@@ -287,7 +286,7 @@ export default function SignDocument({
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-medium text-slate-700">Backend hash (hex)</p>
+            <p className="text-xs font-medium text-slate-700">Hash (MD5 hex)</p>
             <p className="mt-1 break-all font-mono text-xs text-slate-900">
               {serverHash || '—'}
             </p>
@@ -311,11 +310,15 @@ export default function SignDocument({
           setIsPasswordModalOpen(false)
           setPendingOwner('')
           setPasswordModalError('')
-          setErrorMessage('Authentication required before signing.')
+          setErrorMessage('')
         }}
         onConfirm={(password) => {
-          const ok = verifyUserPassword(pendingOwner, password)
-          if (!ok) {
+          const owner = String(pendingOwner || '').trim()
+          const users = loadUserKeys()
+          const user = users.find((u) => String(u?.owner || '').trim() === owner) || null
+          const candidateHash = hashPasswordMD5(password)
+
+          if (!user?.passwordHash || candidateHash !== user.passwordHash) {
             setPasswordModalError('Incorrect password. Access denied.')
             setErrorMessage('Incorrect password. Access denied.')
             return

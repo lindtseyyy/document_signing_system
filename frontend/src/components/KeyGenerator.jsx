@@ -1,11 +1,10 @@
 /**
  * KeyGenerator card.
- * Calls the backend to generate an asymmetric DSA (Digital Signature Algorithm) keypair and displays PEM-encoded keys.
+ * Generates an asymmetric DSA (Digital Signature Algorithm) keypair locally and displays PEM-encoded keys.
  */
 
 import { useState } from 'react'
-import { extractApiErrorMessage, generateKeys } from '../lib/api'
-import { hashPassword } from '../lib/hash'
+import { generateKeys, hashPasswordMD5 } from '../utils/cryptoUtils'
 import { normalizeOwner, upsertUserKeys } from '../lib/userKeysStorage'
 
 /**
@@ -44,7 +43,7 @@ export default function KeyGenerator({ onUserKeysStored }) {
   const [generatedPrivateKey, setGeneratedPrivateKey] = useState('')
 
   /**
-   * Call the backend to generate a keypair.
+   * Generate a keypair locally.
    * Inline critical flow: these keys are used for signing (private) and verifying (public).
    */
   async function handleGenerateKeys() {
@@ -52,12 +51,12 @@ export default function KeyGenerator({ onUserKeysStored }) {
 
     const owner = normalizeOwner(userName)
     if (!owner) {
-      setErrorMessage('User name is required.')
+      setErrorMessage('Please complete all required fields.')
       return
     }
 
     if (!String(password || '').trim()) {
-      setErrorMessage('Password is required to generate keys.')
+      setErrorMessage('Please complete all required fields.')
       return
     }
 
@@ -72,7 +71,7 @@ export default function KeyGenerator({ onUserKeysStored }) {
 
       // Per project requirements, we hash the password client-side using MD5.
       // IMPORTANT: never persist/store the raw password; only store this hash.
-      const passwordHash = hashPassword(password)
+      const passwordHash = hashPasswordMD5(password)
 
       try {
         // Persist the user keys (and password hash) to localStorage via the shared storage API.
@@ -82,7 +81,8 @@ export default function KeyGenerator({ onUserKeysStored }) {
         setErrorMessage('Generated keys, but failed to store them locally.')
       }
     } catch (err) {
-      setErrorMessage(extractApiErrorMessage(err))
+      const message = typeof err?.message === 'string' ? err.message.trim() : ''
+      setErrorMessage(message || 'Something went wrong. Please try again.')
     } finally {
       setIsLoading(false)
     }

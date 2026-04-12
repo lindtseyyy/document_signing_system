@@ -24,7 +24,7 @@ export default function UserKeyManager({ storageRevision }) {
   // --- Private key protection state ---
   // We treat password verification as a *session-only unlock*.
   // Copy is allowed without re-prompting once unlocked in this session.
-  // Showing the private key still requires a password prompt each time it is revealed.
+  // Showing the private key is allowed without re-prompting once unlocked in this session.
   const [unlockedOwners, setUnlockedOwners] = useState(() => new Set())
   const [visibleOwners, setVisibleOwners] = useState(() => new Set())
 
@@ -34,7 +34,7 @@ export default function UserKeyManager({ storageRevision }) {
   const [passwordModalError, setPasswordModalError] = useState('')
   const [passwordModalSubmitting, setPasswordModalSubmitting] = useState(false)
 
-  const MASKED_PRIVATE_KEY = '••••••••••'
+  const MASKED_PRIVATE_KEY = '••••'
 
   /**
    * Select the full PEM so copy includes BEGIN/END lines.
@@ -134,7 +134,8 @@ export default function UserKeyManager({ storageRevision }) {
 
   /**
    * Toggle private key visibility.
-   * Password verification is required every time the key is revealed.
+    * Password verification is required before the key can be revealed.
+    * Once unlocked, reveal/copy is allowed for this session.
    * @param {StoredUserKeys} user
    */
   function handleTogglePrivateKey(user) {
@@ -150,7 +151,11 @@ export default function UserKeyManager({ storageRevision }) {
       return
     }
 
-    // Always prompt before revealing (even if previously unlocked).
+    if (isUnlocked(owner)) {
+      setVisibleOwners((prev) => new Set(prev).add(owner))
+      return
+    }
+
     requestPassword(owner, 'show')
   }
 
@@ -177,8 +182,6 @@ export default function UserKeyManager({ storageRevision }) {
     setPasswordModalError('')
     setPasswordModalOwner('')
     setPasswordModalIntent('')
-    // Required exact error message on cancel / lack of auth.
-    setErrorMessage('Password required to access private key.')
   }
 
   /**

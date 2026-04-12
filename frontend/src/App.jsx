@@ -3,11 +3,12 @@
  * Provides a 3-card flow: Generate Keys → Sign Document → Verify Document (DSA (Digital Signature Algorithm)).
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import KeyGenerator from './components/KeyGenerator.jsx'
 import UserKeyManager from './components/UserKeyManager.jsx'
 import SignDocument from './components/SignDocument.jsx'
 import VerifyDocument from './components/VerifyDocument.jsx'
+import { loadUserKeys, USER_KEYS_CHANGED_EVENT } from './lib/userKeysStorage'
 
 /**
  * App component.
@@ -20,12 +21,27 @@ export default function App() {
   const [signature, setSignature] = useState('')
   const [timestamp, setTimestamp] = useState('')
 
+  const [storedUserKeys, setStoredUserKeys] = useState(() => loadUserKeys())
   const [userKeysRevision, setUserKeysRevision] = useState(0)
 
   // Snapshots captured after a successful sign, used by Verify to classify scenarios.
   const [signedHash, setSignedHash] = useState('')
   const [signedSignatureSnapshot, setSignedSignatureSnapshot] = useState('')
   const [signedPublicKeySnapshot, setSignedPublicKeySnapshot] = useState('')
+
+  useEffect(() => {
+    setStoredUserKeys(loadUserKeys())
+
+    /** @param {any} event */
+    function handleUserKeysChanged(event) {
+      const next = Array.isArray(event?.detail?.users) ? event.detail.users : loadUserKeys()
+      setStoredUserKeys(next)
+      setUserKeysRevision((n) => n + 1)
+    }
+
+    window.addEventListener(USER_KEYS_CHANGED_EVENT, handleUserKeysChanged)
+    return () => window.removeEventListener(USER_KEYS_CHANGED_EVENT, handleUserKeysChanged)
+  }, [])
 
   const SECTIONS = [
     { id: 'userKeys', label: 'User Key Management' },
@@ -45,6 +61,9 @@ export default function App() {
     setSignedSignatureSnapshot(snapshot.signatureSnapshot || '')
     setSignedPublicKeySnapshot(snapshot.publicKeySnapshot || '')
     setTimestamp(snapshot.timestamp == null ? '' : String(snapshot.timestamp))
+
+    // Ensure any storage-backed UI that depends on keys can refresh after signing.
+    setUserKeysRevision((n) => n + 1)
   }
 
   return (
@@ -81,16 +100,14 @@ export default function App() {
 
         <section className="mt-6 grid grid-cols-1 gap-6">
           <div className={activeSection === 'keys' ? '' : 'hidden'} aria-hidden={activeSection !== 'keys'}>
-            <KeyGenerator
-              onUserKeysStored={() => setUserKeysRevision((n) => n + 1)}
-            />
+            <KeyGenerator />
           </div>
 
           <div
             className={activeSection === 'userKeys' ? '' : 'hidden'}
             aria-hidden={activeSection !== 'userKeys'}
           >
-            <UserKeyManager storageRevision={userKeysRevision} />
+            <UserKeyManager storageRevision={userKeysRevision} storageSnapshot={storedUserKeys} />
           </div>
 
           <div className={activeSection === 'sign' ? '' : 'hidden'} aria-hidden={activeSection !== 'sign'}>

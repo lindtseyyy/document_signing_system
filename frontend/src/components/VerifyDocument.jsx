@@ -1,29 +1,21 @@
 /**
  * VerifyDocument card.
- * Sends document + signature + public key to the backend to verify authenticity and integrity.
+ * Verifies document + signature + public key locally (no backend calls).
  */
 
 import { useState } from 'react'
-import { extractApiErrorMessage, verifyDocument } from '../lib/api'
+import { verifySignature } from '../utils/cryptoUtils'
 
-const SCENARIO_MESSAGES = {
-  valid: '✅ Signature is valid! The document and timestamp are authentic and have not been altered.',
-  modifiedDoc:
-    'Signature verification failed. This may indicate that either the document content or its associated timestamp has been modified..',
-  wrongKey:
-    '❌ Invalid signature! Either the signature is incorrect or the public key does not match the signer’s private key.',
-  alteredSig:
-    '❌ Invalid signature! The signature itself appears to have been altered. Verification failed.',
-  missingInfo:
-    '⚠️ Missing information! Please make sure the document, signature, public key, and timestamp are all provided.',
-}
+const REQUIRED_FIELDS_MESSAGE = 'Please complete all required fields.'
+const VERIFICATION_FAILED_MESSAGE =
+  'Verification failed. The document or timestamp may have been altered.'
 
 const MAX_DOCUMENT_SIZE_BYTES = 10 * 1024 * 1024
 const DOCUMENT_ACCEPT =
   '.pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain'
 
 function validateDocumentFile(file) {
-  if (!file) return 'Choose a document file first.'
+  if (!file) return REQUIRED_FIELDS_MESSAGE
   if (file.size > MAX_DOCUMENT_SIZE_BYTES) return 'File is too large. Max size is 10 MiB.'
 
   const name = (file.name || '').toLowerCase()
@@ -72,9 +64,6 @@ function VerificationBadge({ statusMessage }) {
  *   setPublicKey: (next: string) => void,
  *   timestamp: string,
  *   setTimestamp: (next: string) => void,
- *   signedHash: string,
- *   signedSignatureSnapshot: string,
- *   signedPublicKeySnapshot: string,
  * }} props
  */
 export default function VerifyDocument({
@@ -87,10 +76,6 @@ export default function VerifyDocument({
 
   timestamp,
   setTimestamp,
-
-  signedHash,
-  signedSignatureSnapshot,
-  signedPublicKeySnapshot,
 }) {
   const [isLoading, setIsLoading] = useState(false)
   const [, setValid] = useState(/** @type {boolean | null} */ (null))
@@ -98,28 +83,12 @@ export default function VerifyDocument({
   const [statusMessage, setStatusMessage] = useState('')
   const [documentFileError, setDocumentFileError] = useState('')
 
-  function normalizeHash(value) {
-    return String(value || '').trim().toLowerCase()
-  }
-
   function normalizeText(value) {
     return String(value || '').trim()
   }
 
   /**
-   * Map backend error messages to the requested scenarios.
-   * @param {string} message
-   */
-  function mapApiErrorToScenarioMessage(message) {
-    if (!message) return ''
-    if (message.includes('Missing information')) return SCENARIO_MESSAGES.missingInfo
-    if (message.includes('Wrong public key')) return SCENARIO_MESSAGES.wrongKey
-    if (message.includes('Invalid signature')) return SCENARIO_MESSAGES.alteredSig
-    return ''
-  }
-
-  /**
-   * Call backend to verify the signature with the provided public key.
+   * Verify the signature with the provided public key.
    * Critical flow: if the document changes, its hash changes; the signature will no longer match.
    */
   async function handleVerify() {
@@ -132,19 +101,19 @@ export default function VerifyDocument({
       return
     }
 
-    // Guided flow: before calling backend, ensure all required inputs exist.
+    // Guided flow: before verifying, ensure all required inputs exist.
     const hasDocument = Boolean(documentFile)
     const hasSignature = Boolean(normalizeText(signature))
     const hasPublicKey = Boolean(normalizeText(publicKey))
     const hasTimestamp = Boolean(normalizeText(timestamp))
     if (!hasDocument || !hasSignature || !hasPublicKey || !hasTimestamp) {
-      setStatusMessage(SCENARIO_MESSAGES.missingInfo)
+      setStatusMessage(REQUIRED_FIELDS_MESSAGE)
       return
     }
     setIsLoading(true)
 
     try {
-      const data = await verifyDocument({ document: documentFile, signature, publicKey, timestamp })
+      const data = await verifySignature({ document: documentFile, signature, publicKey, timestamp })
 
       const isValid = Boolean(data?.isValid)
       const returnedHash = data?.hash || ''
@@ -152,39 +121,23 @@ export default function VerifyDocument({
       setServerHash(returnedHash)
 
       if (isValid) {
-        setStatusMessage(SCENARIO_MESSAGES.valid)
+        setStatusMessage('✅ Signature is valid! The document and timestamp are authentic and have not been altered.')
         return
       }
 
-      const signedHashNormalized = normalizeHash(signedHash)
-      const returnedHashNormalized = normalizeHash(returnedHash)
-      if (signedHashNormalized && returnedHashNormalized && returnedHashNormalized !== signedHashNormalized) {
-        setStatusMessage(SCENARIO_MESSAGES.modifiedDoc)
-        return
-      }
-
-      const signedPublicKeyNormalized = normalizeText(signedPublicKeySnapshot)
-      const publicKeyNormalized = normalizeText(publicKey)
-      if (signedPublicKeyNormalized && publicKeyNormalized && publicKeyNormalized !== signedPublicKeyNormalized) {
-        setStatusMessage(SCENARIO_MESSAGES.wrongKey)
-        return
-      }
-
-      const signedSignatureNormalized = normalizeText(signedSignatureSnapshot)
-      const signatureNormalized = normalizeText(signature)
-      if (signedSignatureNormalized && signatureNormalized && signatureNormalized !== signedSignatureNormalized) {
-        setStatusMessage(SCENARIO_MESSAGES.alteredSig)
-        return
-      }
-
-      setStatusMessage(SCENARIO_MESSAGES.wrongKey)
+      // Any invalid result is a verification failure per requirements.
+      setStatusMessage(VERIFICATION_FAILED_MESSAGE)
     } catch (err) {
       setValid(null)
       setServerHash('')
 
-      const apiMessage = extractApiErrorMessage(err)
-      const mappedScenario = mapApiErrorToScenarioMessage(apiMessage)
-      setStatusMessage(mappedScenario || apiMessage)
+      const message = typeof err?.message === 'string' ? err.message.trim() : ''
+      if (message === REQUIRED_FIELDS_MESSAGE) {
+        setStatusMessage(REQUIRED_FIELDS_MESSAGE)
+        return
+      }
+
+      setStatusMessage(VERIFICATION_FAILED_MESSAGE)
     } finally {
       setIsLoading(false)
     }
@@ -292,7 +245,7 @@ export default function VerifyDocument({
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <p className="text-xs font-medium text-slate-700">Backend hash (hex)</p>
+          <p className="text-xs font-medium text-slate-700">Hash (MD5 hex)</p>
           <p className="mt-1 break-all font-mono text-xs text-slate-900">
             {serverHash || '—'}
           </p>

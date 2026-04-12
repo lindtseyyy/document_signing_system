@@ -14,10 +14,12 @@
  *   new root-array format on the next write (and also immediately on load when safe).
  */
 
-import { md5Hex } from './hash'
+import { hashPasswordMD5 } from '../utils/cryptoUtils'
 
 const STORAGE_KEY = 'dss.userKeys'
 const STORAGE_VERSION = 1
+
+export const USER_KEYS_CHANGED_EVENT = 'dss:userKeysChanged'
 
 /**
  * Current stored user shape.
@@ -26,6 +28,25 @@ const STORAGE_VERSION = 1
 
 function isBrowser() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+}
+
+/**
+ * Notify same-tab subscribers that user keys have changed.
+ * @param {StoredUserKeys[]} users
+ */
+function notifyUsersChanged(users) {
+  if (!isBrowser()) return
+  if (typeof window.CustomEvent !== 'function') return
+
+  try {
+    window.dispatchEvent(
+      new CustomEvent(USER_KEYS_CHANGED_EVENT, {
+        detail: { users: dedupeAndSortUsers(users) },
+      }),
+    )
+  } catch {
+    // Ignore notification errors; storage is still written.
+  }
 }
 
 /**
@@ -126,7 +147,9 @@ export function saveUserKeys(users) {
   if (!isBrowser()) return
 
   // Always write the new root-array format.
-  writeUsersArray(dedupeAndSortUsers(users))
+  const normalized = dedupeAndSortUsers(users)
+  writeUsersArray(normalized)
+  notifyUsersChanged(normalized)
 }
 
 /**
@@ -186,7 +209,7 @@ export function deleteUserKeys(owner) {
  * Verify a user's password against the stored MD5 hash.
  *
  * Password verification logic:
- * - Compute `md5Hex(password)` and compare to stored `passwordHash`.
+ * - Compute `hashPasswordMD5(password)` and compare to stored `passwordHash`.
  * - We never store or return raw passwords.
  *
  * @param {string} owner
@@ -201,6 +224,6 @@ export function verifyUserPassword(owner, password) {
   const user = users.find((u) => normalizeOwner(u.owner) === normalizedOwner)
   if (!user?.passwordHash) return false
 
-  const candidateHash = md5Hex(String(password ?? ''))
+  const candidateHash = hashPasswordMD5(String(password ?? ''))
   return candidateHash === user.passwordHash
 }
