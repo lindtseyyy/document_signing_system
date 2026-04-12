@@ -78,6 +78,27 @@ export default function SignDocument({
   const [signedTimestamp, setSignedTimestamp] = useState('')
   const [documentFileError, setDocumentFileError] = useState('')
 
+  async function copyValueToClipboard({ value, emptyMessage, successMessage, failureMessage }) {
+    const rawValue = String(value ?? '')
+    const trimmedValue = rawValue.trim()
+
+    if (!trimmedValue) {
+      toast.error(emptyMessage)
+      return
+    }
+
+    try {
+      if (!navigator?.clipboard?.writeText) {
+        throw new Error('Clipboard API not available')
+      }
+
+      await navigator.clipboard.writeText(rawValue)
+      toast.success(successMessage)
+    } catch {
+      toast.error(failureMessage)
+    }
+  }
+
   // Phase 4.1: Password verification gate
   // Before we allow the signing action to execute, we require the user to authenticate
   // as the owner of the selected/stored keypair. This prevents signing with a private key
@@ -265,7 +286,24 @@ export default function SignDocument({
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-700">Signature (base64)</label>
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-sm font-medium text-slate-700">Signature (base64)</label>
+              <button
+                type="button"
+                onClick={() =>
+                  copyValueToClipboard({
+                    value: signedSignature,
+                    emptyMessage: 'No signature to copy.',
+                    successMessage: 'Signature copied to clipboard.',
+                    failureMessage: 'Failed to copy signature.',
+                  })
+                }
+                disabled={!String(signedSignature || '').trim()}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Copy
+              </button>
+            </div>
             <textarea
               className="w-full min-h-24 rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs text-slate-900"
               value={signedSignature || ''}
@@ -276,12 +314,46 @@ export default function SignDocument({
           </div>
 
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-xs font-medium text-slate-700">Hash (MD5 hex)</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-slate-700">Hash (MD5 hex)</p>
+              <button
+                type="button"
+                onClick={() =>
+                  copyValueToClipboard({
+                    value: serverHash,
+                    emptyMessage: 'No hash to copy.',
+                    successMessage: 'Hash copied to clipboard.',
+                    failureMessage: 'Failed to copy hash.',
+                  })
+                }
+                disabled={!String(serverHash || '').trim()}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Copy
+              </button>
+            </div>
             <p className="mt-1 break-all font-mono text-xs text-slate-900">
               {serverHash || '—'}
             </p>
 
-            <p className="mt-3 text-xs font-medium text-slate-700">Timestamp</p>
+            <div className="mt-3 flex items-center justify-between gap-3">
+              <p className="text-xs font-medium text-slate-700">Timestamp</p>
+              <button
+                type="button"
+                onClick={() =>
+                  copyValueToClipboard({
+                    value: signedTimestamp,
+                    emptyMessage: 'No timestamp to copy.',
+                    successMessage: 'Timestamp copied to clipboard.',
+                    failureMessage: 'Failed to copy timestamp.',
+                  })
+                }
+                disabled={!String(signedTimestamp || '').trim()}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                Copy
+              </button>
+            </div>
             <p className="mt-1 break-all font-mono text-xs text-slate-900">
               {signedTimestamp || '—'}
             </p>
