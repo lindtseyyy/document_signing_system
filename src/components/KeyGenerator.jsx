@@ -109,10 +109,10 @@ export default function KeyGenerator({ onUserKeysStored }) {
               setUserName(e.target.value)
               if (errorMessage) setErrorMessage('')
             }}
-            placeholder="e.g. Alice"
+            placeholder="Enter a name"
             autoComplete="name"
           />
-          <p className="text-sm text-slate-500">Used to save this keypair in localStorage.</p>
+          
         </div>
 
         <div className="space-y-2">
@@ -131,7 +131,7 @@ export default function KeyGenerator({ onUserKeysStored }) {
             placeholder="Enter a password"
             autoComplete="new-password"
           />
-          <p className="text-sm text-slate-500">Saved as an MD5 hash (never stored as plain text).</p>
+         
         </div>
 
         <div className="flex items-center gap-3">
