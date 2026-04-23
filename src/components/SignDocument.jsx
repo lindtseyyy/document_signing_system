@@ -104,7 +104,6 @@ export default function SignDocument({
   // as the owner of the selected/stored keypair. This prevents signing with a private key
   // without confirming the owner's password.
   const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false)
-  const [passwordModalError, setPasswordModalError] = useState('')
   const [pendingOwner, setPendingOwner] = useState('')
 
   function normalizePemForMatch(pem) {
@@ -192,8 +191,6 @@ export default function SignDocument({
    * - Only after successful password verification do we call the existing signing logic.
    */
   function handleSignClick() {
-    setPasswordModalError('')
-
     const owner = inferSigningOwner()
     if (!owner) {
       // Without a determinable owner, we cannot authenticate; block signing.
@@ -365,29 +362,31 @@ export default function SignDocument({
         isOpen={isPasswordModalOpen}
         title="Confirm password"
         bodyText={pendingOwner ? `Enter the password for “${pendingOwner}” to sign.` : undefined}
-        error={passwordModalError}
         isSubmitting={false}
         onCancel={() => {
           // If the user cancels/closes without successful authentication, signing is blocked.
           setIsPasswordModalOpen(false)
           setPendingOwner('')
-          setPasswordModalError('')
         }}
         onConfirm={(password) => {
+          const trimmedPassword = String(password || '').trim()
+          if (!trimmedPassword) {
+            toast.error('Password is required')
+            return
+          }
+
           const owner = String(pendingOwner || '').trim()
           const users = loadUserKeys()
           const user = users.find((u) => String(u?.owner || '').trim() === owner) || null
-          const candidateHash = hashPasswordMD5(password)
+          const candidateHash = hashPasswordMD5(trimmedPassword)
 
           if (!user?.passwordHash || candidateHash !== user.passwordHash) {
-            setPasswordModalError('Incorrect password. Access denied.')
             toast.error('Incorrect password. Access denied.')
             return
           }
 
           setIsPasswordModalOpen(false)
           setPendingOwner('')
-          setPasswordModalError('')
 
           // Auth succeeded: proceed with the existing signing logic unchanged.
           void handleSign()

@@ -31,7 +31,6 @@ export default function UserKeyManager({ storageRevision }) {
   const [passwordModalOpen, setPasswordModalOpen] = useState(false)
   const [passwordModalOwner, setPasswordModalOwner] = useState('')
   const [passwordModalIntent, setPasswordModalIntent] = useState(/** @type {'show' | 'copy' | ''} */ (''))
-  const [passwordModalError, setPasswordModalError] = useState('')
   const [passwordModalSubmitting, setPasswordModalSubmitting] = useState(false)
 
   const MASKED_PRIVATE_KEY = '••••'
@@ -77,7 +76,6 @@ export default function UserKeyManager({ storageRevision }) {
 
     setPasswordModalOwner(normalized)
     setPasswordModalIntent(intent)
-    setPasswordModalError('')
     setPasswordModalSubmitting(false)
     setPasswordModalOpen(true)
   }
@@ -205,7 +203,6 @@ export default function UserKeyManager({ storageRevision }) {
   function closePasswordModalWithCancel() {
     setPasswordModalOpen(false)
     setPasswordModalSubmitting(false)
-    setPasswordModalError('')
     setPasswordModalOwner('')
     setPasswordModalIntent('')
   }
@@ -222,12 +219,17 @@ export default function UserKeyManager({ storageRevision }) {
       return
     }
 
+    const trimmedPassword = String(password || '').trim()
+    if (!trimmedPassword) {
+      toast.error('Password is required')
+      return
+    }
+
     setPasswordModalSubmitting(true)
 
-    const ok = verifyUserPassword(owner, password)
+    const ok = verifyUserPassword(owner, trimmedPassword)
     if (!ok) {
       // Required exact error message on incorrect password.
-      setPasswordModalError('Incorrect password. Access denied.')
       toast.error('Incorrect password. Access denied.')
       setPasswordModalSubmitting(false)
       return
@@ -238,7 +240,6 @@ export default function UserKeyManager({ storageRevision }) {
     const intent = passwordModalIntent
     setPasswordModalOpen(false)
     setPasswordModalSubmitting(false)
-    setPasswordModalError('')
     setPasswordModalOwner('')
     setPasswordModalIntent('')
 
@@ -394,7 +395,6 @@ export default function UserKeyManager({ storageRevision }) {
         isOpen={passwordModalOpen}
         title="Verify Password"
         bodyText="Enter your password to access the private key for this user."
-        error={passwordModalError}
         isSubmitting={passwordModalSubmitting}
         onCancel={closePasswordModalWithCancel}
         onConfirm={confirmPassword}

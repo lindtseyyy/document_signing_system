@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useToast } from "../hooks/useToast";
 
 /**
  * PasswordModal
@@ -7,7 +8,6 @@ import React, { useEffect, useState } from "react";
  * - isOpen: boolean
  * - title: string
  * - bodyText?: string
- * - error?: string
  * - isSubmitting?: boolean
  * - onCancel: () => void
  * - onConfirm: (password: string) => void
@@ -16,11 +16,11 @@ export default function PasswordModal({
   isOpen,
   title,
   bodyText,
-  error,
   isSubmitting = false,
   onCancel,
   onConfirm,
 }) {
+  const toast = useToast();
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
@@ -34,7 +34,13 @@ export default function PasswordModal({
   if (!isOpen) return null;
 
   const handleConfirm = () => {
-    onConfirm(password);
+    const trimmedPassword = String(password || "").trim();
+    if (!trimmedPassword) {
+      toast.error("Password is required");
+      return;
+    }
+
+    onConfirm(trimmedPassword);
   };
 
   return (
@@ -112,12 +118,6 @@ export default function PasswordModal({
                 </svg>
               )}
             </button>
-          </div>
-
-          <div className="min-h-5">
-            {error ? (
-              <p className="text-sm text-red-600">{error}</p>
-            ) : null}
           </div>
         </div>
 
