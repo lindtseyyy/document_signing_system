@@ -32,6 +32,8 @@ export default function UserKeyManager({ storageRevision }) {
   const [passwordModalOwner, setPasswordModalOwner] = useState('')
   const [passwordModalIntent, setPasswordModalIntent] = useState(/** @type {'show' | 'copy' | ''} */ (''))
   const [passwordModalSubmitting, setPasswordModalSubmitting] = useState(false)
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleteModalOwner, setDeleteModalOwner] = useState('')
 
   const MASKED_PRIVATE_KEY = '••••'
 
@@ -122,12 +124,31 @@ export default function UserKeyManager({ storageRevision }) {
   /**
    * @param {StoredUserKeys} user
    */
-  function handleDelete(user) {
+  function requestDelete(user) {
     const owner = normalizeOwner(user?.owner)
     if (!owner) return
 
-    const ok = window.confirm ? window.confirm(`Delete keys for “${owner}”?`) : true
-    if (!ok) return
+    // Keep modal interactions mutually exclusive.
+    setPasswordModalOpen(false)
+    setPasswordModalSubmitting(false)
+    setPasswordModalOwner('')
+    setPasswordModalIntent('')
+
+    setDeleteModalOwner(owner)
+    setDeleteModalOpen(true)
+  }
+
+  function closeDeleteModal() {
+    setDeleteModalOpen(false)
+    setDeleteModalOwner('')
+  }
+
+  function confirmDelete() {
+    const owner = normalizeOwner(deleteModalOwner)
+    if (!owner) {
+      closeDeleteModal()
+      return
+    }
 
     // Secure deletion: remove the entry from localStorage via deleteUserKeys(owner).
     try {
@@ -143,6 +164,7 @@ export default function UserKeyManager({ storageRevision }) {
         return next
       })
       toast.success(`Deleted “${owner}”.`)
+      closeDeleteModal()
     } catch {
       toast.error('Failed to delete keys.')
     }
@@ -370,7 +392,7 @@ export default function UserKeyManager({ storageRevision }) {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => handleDelete(user)}
+                          onClick={() => requestDelete(user)}
                           className="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700"
                           title="Delete this user’s keys from localStorage"
                         >
@@ -398,6 +420,17 @@ export default function UserKeyManager({ storageRevision }) {
         isSubmitting={passwordModalSubmitting}
         onCancel={closePasswordModalWithCancel}
         onConfirm={confirmPassword}
+      />
+
+      <PasswordModal
+        isOpen={deleteModalOpen}
+        variant="confirm"
+        title="Delete Saved Keys"
+        bodyText={`Delete keys for "${deleteModalOwner}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        confirmTone="danger"
+        onCancel={closeDeleteModal}
+        onConfirm={confirmDelete}
       />
 
     </section>
