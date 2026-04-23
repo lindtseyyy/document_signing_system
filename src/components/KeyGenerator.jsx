@@ -42,6 +42,7 @@ export default function KeyGenerator({ onUserKeysStored }) {
   const [isLoading, setIsLoading] = useState(false)
   const [userName, setUserName] = useState('')
   const [password, setPassword] = useState('')
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false)
   const [generatedPublicKey, setGeneratedPublicKey] = useState('')
   const [generatedPrivateKey, setGeneratedPrivateKey] = useState('')
   const toast = useToast()
@@ -163,17 +164,71 @@ export default function KeyGenerator({ onUserKeysStored }) {
           <label htmlFor="keygen-password" className="text-sm font-medium text-slate-700">
             Password
           </label>
-          <input
-            id="keygen-password"
-            type="password"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900"
-            value={password}
-            onChange={(e) => {
-              setPassword(e.target.value)
-            }}
-            placeholder="Enter a password"
-            autoComplete="new-password"
-          />
+          <div className="relative">
+            <input
+              id="keygen-password"
+              type={isPasswordVisible ? 'text' : 'password'}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 pr-10 text-sm text-slate-900"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value)
+              }}
+              placeholder="Enter a password"
+              autoComplete="new-password"
+            />
+            <button
+              type="button"
+              onClick={() => setIsPasswordVisible((prev) => !prev)}
+              className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-500 hover:text-slate-700"
+              aria-label={isPasswordVisible ? 'Hide password' : 'Show password'}
+            >
+              {isPasswordVisible ? (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M10.58 10.58A2 2 0 0012 14a2 2 0 001.42-.58"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9.88 5.09A10.9 10.9 0 0112 4.8c5.05 0 9.27 3.36 10.5 7.2a11.6 11.6 0 01-3.24 4.93"
+                  />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6.61 6.6A11.58 11.58 0 001.5 12c1.23 3.84 5.45 7.2 10.5 7.2 1.53 0 2.98-.31 4.28-.86"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M1.5 12c1.23-3.84 5.45-7.2 10.5-7.2s9.27 3.36 10.5 7.2c-1.23 3.84-5.45 7.2-10.5 7.2S2.73 15.84 1.5 12z"
+                  />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+              )}
+            </button>
+          </div>
          
         </div>
 
